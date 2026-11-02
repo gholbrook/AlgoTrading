@@ -528,6 +528,7 @@ HTML_PAGE = """
         let sortCol = 'idx';
         let sortAsc = true;
         let liveRefreshInterval = null;
+        let lastRenderedSymbol = null;  // Track which symbol was last rendered
 
         async function loadAssets() {
             const res = await fetch('/api/assets');
@@ -550,6 +551,7 @@ HTML_PAGE = """
                 document.getElementById('stats-bar').innerHTML = '';
                 renderTrades([]);
                 stopLiveRefresh();
+                lastRenderedSymbol = null;
                 return;
             }
             await refreshChart();
@@ -558,7 +560,11 @@ HTML_PAGE = """
         function startLiveRefresh() {
             stopLiveRefresh();
             liveRefreshInterval = setInterval(async () => {
-                if (currentSymbol) await refreshChart();
+                if (currentSymbol && lastRenderedSymbol === currentSymbol) {
+                    // Same symbol — only update stats and markers, preserve viewport
+                    updateStatsFromChart();
+                    updateTradeMarkers();
+                }
             }, 5000); // poll every 5 seconds
         }
 
@@ -579,24 +585,39 @@ HTML_PAGE = """
                 Plotly.purge('chart');
                 document.getElementById('stats-bar').innerHTML = '';
                 renderTrades([]);
+                lastRenderedSymbol = null;
                 return;
             }
 
-            // Only build chart on first load. Subsequent polls update stats/trades only,
-            // leaving the chart viewport untouched (zoom/pan preserved).
-            if (!chartInitialized) {
+            // Rebuild chart only when symbol changes — this resets zoom/pan but is necessary
+            // for different data. Once same-symbol, use restyle to preserve viewport.
+            if (lastRenderedSymbol !== currentSymbol) {
                 Plotly.newPlot('chart', data.figure.data, data.figure.layout, {
                     responsive: true,
                     displayModeBar: true,
                     modeBarButtonsToRemove: ['lasso2d', 'select2d'],
                 });
-                chartInitialized = true;
+                lastRenderedSymbol = currentSymbol;
+            } else {
+                // Same symbol — just update stats (price data unchanged)
+                updateStatsFromChart();
             }
 
-            // Update stats on every poll (summary changes as live trades accumulate)
+            // Update stats
+            updateStats(data.summary);
+
+            // Load trades list and update chart markers
+            loadTradesList();
+            updateTradeMarkers();
+
+            // Start live polling if we have data
+            startLiveRefresh();
+        }
+
+        function updateStats(summary) {
             const bar = document.getElementById('stats-bar');
-            if (data.summary) {
-                const s = data.summary;
+            if (summary) {
+                const s = summary;
                 bar.innerHTML = `
                     <div class="stat-card"><div class="label">Total Trades</div><div class="value">${s.total_trades}</div></div>
                     <div class="stat-card"><div class="label">Win Rate</div><div class="value">${s.win_rate}%</div></div>
@@ -609,15 +630,14 @@ HTML_PAGE = """
                 bar.innerHTML = '<div class="no-data">No backtest registered for this asset pair.</div>';
                 document.getElementById('live-badge').classList.remove('active');
             }
-
-            // Load trades list on every poll (this updates the table below)
-            loadTradesList();
-
-            // Start live polling if we have data
-            startLiveRefresh();
         }
 
-        let chartInitialized = false;
+        function updateStatsFromChart() {
+            // On live poll, re-fetch just the summary to update stats without touching chart
+            fetch(`/api/chart?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}`)
+                .then(r => r.json())
+                .then(data => updateStats(data.summary));
+        }
 
         async function updateTradeMarkers() {
             const res = await fetch(`/api/trade-markers?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}`);
