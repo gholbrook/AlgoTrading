@@ -420,8 +420,8 @@ HTML_PAGE = """
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f6fa;
-            color: #2c3e50;
+            background: #0f172a;
+            color: #cbd5e1;
         }
         .header {
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -441,13 +441,14 @@ HTML_PAGE = """
         select, button {
             padding: 8px 16px;
             border-radius: 6px;
-            border: 1px solid #d1d5db;
+            border: 1px solid #334155;
             font-size: 14px;
-            background: white;
+            background: #1e293b;
+            color: #e2e8f0;
             cursor: pointer;
             transition: all 0.15s;
         }
-        select:hover, button:hover { border-color: #3b82f6; }
+        select:hover, button:hover { border-color: #60a5fa; }
         select:focus, button:focus { outline: none; box-shadow: 0 0 0 2px rgba(59,130,246,0.3); }
         button.primary {
             background: #3b82f6;
@@ -459,8 +460,8 @@ HTML_PAGE = """
             display: flex;
             gap: 16px;
             padding: 12px 32px;
-            background: white;
-            border-bottom: 1px solid #e5e7eb;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
             flex-wrap: wrap;
         }
         .stats-bar.hidden { display: none; }
@@ -468,11 +469,11 @@ HTML_PAGE = """
             flex: 1;
             min-width: 140px;
             padding: 12px 16px;
-            background: #f9fafb;
+            background: #0f172a;
             border-radius: 8px;
-            border: 1px solid #e5e7eb;
+            border: 1px solid #334155;
         }
-        .stat-card .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
         .stat-card .value { font-size: 20px; font-weight: 700; margin-top: 2px; }
         .stat-card .value.positive { color: #10b981; }
         .stat-card .value.negative { color: #ef4444; }
@@ -506,11 +507,11 @@ HTML_PAGE = """
             justify-content: space-between;
             margin-bottom: 12px;
         }
-        .trades-header h2 { font-size: 18px; font-weight: 600; color: #374151; }
+        .trades-header h2 { font-size: 18px; font-weight: 600; color: #e2e8f0; }
         .trade-table-wrap {
-            background: white;
+            background: #1e293b;
             border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
             overflow: hidden;
         }
         .trade-table-scroll {
@@ -528,15 +529,15 @@ HTML_PAGE = """
             z-index: 1;
         }
         table.trade-table th {
-            background: #f9fafb;
+            background: #0f172a;
             padding: 10px 14px;
             text-align: left;
             font-weight: 600;
-            color: #6b7280;
+            color: #94a3b8;
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid #334155;
             cursor: pointer;
             user-select: none;
             white-space: nowrap;
@@ -545,10 +546,11 @@ HTML_PAGE = """
         table.trade-table th .sort-arrow { margin-left: 4px; font-size: 10px; }
         table.trade-table td {
             padding: 9px 14px;
-            border-bottom: 1px solid #f3f4f6;
+            border-bottom: 1px solid #334155;
             white-space: nowrap;
+            color: #cbd5e1;
         }
-        table.trade-table tbody tr:hover { background: #f9fafb; }
+        table.trade-table tbody tr:hover { background: #1e293b; }
         .pnl-positive { color: #10b981; font-weight: 600; }
         .pnl-negative { color: #ef4444; font-weight: 600; }
         .badge {
@@ -558,8 +560,8 @@ HTML_PAGE = """
             font-size: 11px;
             font-weight: 600;
         }
-        .badge-long { background: #d1fae5; color: #065f46; }
-        .badge-short { background: #fee2e2; color: #991b1b; }
+        .badge-long { background: #065f46; color: #a7f3d0; }
+        .badge-short { background: #991b1b; color: #fecaca; }
         .trade-empty {
             padding: 48px;
             text-align: center;
@@ -574,8 +576,8 @@ HTML_PAGE = """
             gap: 6px;
             padding: 4px 12px;
             border-radius: 9999px;
-            background: #fef3c7;
-            color: #92400e;
+            background: #78350f;
+            color: #fde68a;
             font-size: 12px;
             font-weight: 600;
         }
@@ -596,7 +598,7 @@ HTML_PAGE = """
             display: flex;
             border-radius: 6px;
             overflow: hidden;
-            border: 1px solid #d1d5db;
+            border: 1px solid #334155;
         }
         .source-toggle button {
             padding: 6px 14px;
@@ -604,8 +606,8 @@ HTML_PAGE = """
             font-weight: 600;
             border: none;
             cursor: pointer;
-            background: white;
-            color: #6b7280;
+            background: #1e293b;
+            color: #94a3b8;
             transition: all 0.15s;
         }
         .source-toggle button.active {
@@ -613,7 +615,7 @@ HTML_PAGE = """
             color: white;
         }
         .source-toggle button:first-child {
-            border-right: 1px solid #d1d5db;
+            border-right: 1px solid #334155;
         }
     </style>
 </head>
