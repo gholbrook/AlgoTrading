@@ -1,13 +1,13 @@
 """Live websocket data feed and paper trading engine.
 
-Connects to Kraken via WebSocket (5-min candles), computes the same
-indicators as main.py (SMA-200 + BBands-20,2), and opens/closes paper
-positions based on the grid strategy logic.  Results are saved to a JSON
-file so the UI can display them.
+Connects to Kraken via WebSocket (5-min candles), downloads historical data
+first so indicators have sufficient lookback, then appends new candles as they
+arrive. The strategy runs on the combined historical + live dataset. Results are
+saved to a JSON file so the UI can display them.
 
 Usage:
     python live_paper_trade.py [--pairs ETH/BTC BTC/USD] [--timeframe 5min]
-                               [--output live_trades.json]
+                               [--output live_trades.json] [--history-days 30]
 """
 
 import argparse
@@ -16,10 +16,11 @@ import os
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
+import ccxt
 import numpy as np
 import pandas as pd
 import websocket
@@ -213,14 +214,116 @@ class PaperTrader:
 
 
 # ---------------------------------------------------------------------------
-# WebSocket client
+# Historical data download (CCXT)
 # ---------------------------------------------------------------------------
 
-# Global cache for OHLCV data (symbol -> DataFrame)
-df_cache: dict[str, pd.DataFrame] = {}
-paper_trader: Optional[PaperTrader] = None
-output_file: str = DEFAULT_OUTPUT
+def _download_history_for_pair(symbol: str, timeframe: str = "5m",
+                                days: int = 30,
+                                save_dir: str = LIVE_DATA_DIR) -> Optional[str]:
+    """Download historical OHLCV data and merge into live CSV.
 
+    Downloads enough history so indicators (SMA-200, BBands) have sufficient
+    lookback. Merges with any existing live data, preserving the newest candles.
+    Saves combined dataset to data/live/{SYMBOL}_live_5m.csv.
+
+    Returns the path to the saved file, or None on failure.
+    """
+    safe_symbol = symbol.replace("/", "_")
+    csv_path = os.path.join(save_dir, f"{safe_symbol}_live_{timeframe}.csv")
+
+    # Load any existing live data first (newer candles)
+    existing_live = pd.DataFrame()
+    if os.path.exists(csv_path):
+        try:
+            existing_live = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+            print(f"  Found {len(existing_live)} existing live bars for {symbol}")
+        except Exception:
+            pass
+
+    # Determine which exchange to use (Kraken is the same one we stream from)
+    fallback = ["kraken", "okx", "bitfinex", "coinbase", "gate"]
+    df_history = None
+
+    for ex_name in ["kraken"] + [e for e in fallback if e != "kraken"]:
+        try:
+            df_history = _fetch_ohlcv(symbol, ex_name, timeframe, days)
+            if df_history is not None and len(df_history) > 0:
+                print(f"  Downloaded {len(df_history)} historical bars from {ex_name}")
+                break
+        except Exception as e:
+            print(f"  {ex_name} failed: {str(e)[:100]}")
+
+    if df_history is None or len(df_history) == 0:
+        print(f"  WARNING: No historical data for {symbol}, will use WebSocket bars only")
+        return csv_path
+
+    # Merge: historical + existing live (deduplicate by timestamp, keep last)
+    all_data = pd.concat([df_history, existing_live]) if len(existing_live) > 0 else df_history
+    all_data = all_data[~all_data.index.duplicated(keep='last')]
+    all_data = all_data.sort_index()
+
+    # Save combined dataset
+    os.makedirs(save_dir, exist_ok=True)
+    all_data.to_csv(csv_path)
+    print(f"  Saved combined {safe_symbol}: {len(all_data)} bars "
+          f"({all_data.index[0].strftime('%Y-%m-%d')} to {all_data.index[-1].strftime('%Y-%m-%d')})")
+
+    return csv_path
+
+
+def _fetch_ohlcv(symbol: str, exchange_name: str, timeframe: str,
+                 days: int) -> pd.DataFrame:
+    """Fetch OHLCV data from a single CCXT exchange."""
+    exchange_class = getattr(ccxt, exchange_name, None)
+    if exchange_class is None:
+        raise RuntimeError(f"Exchange '{exchange_name}' not found in ccxt")
+
+    exchange = exchange_class({"enableRateLimit": True})
+    exchange.load_markets()
+
+    # CCXT timeframe format (Kraken uses 5m, Binance uses 5m too)
+    if timeframe == "5min":
+        tf = "5m"
+    elif timeframe == "1h":
+        tf = "1h"
+    else:
+        tf = timeframe
+
+    since = exchange.parse8601(
+        (datetime.utcnow() - timedelta(days=days)).isoformat()
+    )
+
+    all_rows = []
+    limit = 1000
+
+    while True:
+        try:
+            df = exchange.fetch_ohlcv(symbol, timeframe=tf, since=since, limit=limit)
+        except Exception as e:
+            raise RuntimeError(f"Fetch failed from {exchange_name}: {e}") from e
+
+        if not df or len(df) == 0:
+            break
+
+        all_rows.extend(df)
+        if len(df) < limit:
+            break
+
+        since = int(df[-1][0]) + 1
+        time.sleep(exchange.rateLimit / 1000.0)
+
+    if not all_rows:
+        raise RuntimeError(f"No data returned for {symbol} from {exchange_name}")
+
+    df = pd.DataFrame(all_rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+    df.set_index("timestamp", inplace=True)
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Live CSV management
+# ---------------------------------------------------------------------------
 
 def _append_live_csv(symbol: str, timestamp: pd.Timestamp, open_price: float,
                      high_price: float, low_price: float, close_price: float,
@@ -259,6 +362,16 @@ def _append_live_csv(symbol: str, timestamp: pd.Timestamp, open_price: float,
             row.to_csv(csv_path)
     else:
         row.to_csv(csv_path)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket client
+# ---------------------------------------------------------------------------
+
+# Global cache for OHLCV data (symbol -> DataFrame) — includes historical + live
+df_cache: dict[str, pd.DataFrame] = {}
+paper_trader: Optional[PaperTrader] = None
+output_file: str = DEFAULT_OUTPUT
 
 
 def _kraken_pair_to_symbol(pair: str) -> Optional[str]:
@@ -320,7 +433,7 @@ def on_message(ws: websocket.WebSocketApp, message: str):
         open_price = float(candle[6])
         volume = float(candle[7])
 
-        # Update or create OHLCV DataFrame for this symbol
+        # Update or create OHLCV DataFrame for this symbol (includes historical data)
         if symbol not in df_cache:
             df_cache[symbol] = pd.DataFrame({
                 "open": [], "high": [], "low": [],
@@ -330,7 +443,6 @@ def on_message(ws: websocket.WebSocketApp, message: str):
         df = df_cache[symbol]
 
         # Check if this candle is newer than what we have
-        new_candle = False
         if len(df) > 0 and df.index[-1] >= timestamp:
             # Update the last candle (in-progress bar)
             df.loc[df.index[-1]] = [open_price, high_price, low_price,
@@ -343,12 +455,11 @@ def on_message(ws: websocket.WebSocketApp, message: str):
                 "volume": [volume],
             }, index=pd.DatetimeIndex([timestamp]))
             df_cache[symbol] = pd.concat([df, row]) if len(df) > 0 else row
-            new_candle = True
 
         # Append to live CSV file for UI consumption
         _append_live_csv(symbol, timestamp, open_price, high_price, low_price, close_price, volume)
 
-        # Run strategy on this candle
+        # Run strategy on this candle (uses combined historical + live data)
         _run_strategy(symbol, df_cache[symbol], timestamp)
 
 
@@ -516,6 +627,8 @@ def main():
     parser.add_argument("--timeframe", default=DEFAULT_TIMEFRAME)
     parser.add_argument("--output", default=DEFAULT_OUTPUT,
                         help="Output JSON file path")
+    parser.add_argument("--history-days", type=int, default=30,
+                        help="Days of historical data to download for indicator warmup (default: 30)")
     args = parser.parse_args()
 
     output_file = args.output
@@ -529,11 +642,26 @@ def main():
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
+    # Download historical data for each pair so indicators have warmup
+    print(f"Downloading {args.history_days} days of history for indicator warmup...")
+    for symbol in args.pairs:
+        _download_history_for_pair(symbol, args.timeframe, args.history_days)
+
     # Build WebSocket subscription URL
     pairs_str = ",".join([_symbol_to_kraken(p) for p in args.pairs])
     ws_url = "wss://ws.kraken.com"
 
-    print(f"Connecting to Kraken WebSocket...")
+    # Load historical data into df_cache so the strategy can run immediately
+    print("\nLoading historical data into memory...")
+    for symbol in args.pairs:
+        safe_symbol = symbol.replace("/", "_")
+        csv_path = os.path.join(LIVE_DATA_DIR, f"{safe_symbol}_live_{args.timeframe}.csv")
+        if os.path.exists(csv_path):
+            df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+            df_cache[symbol] = df
+            print(f"  Loaded {len(df)} bars for {symbol}")
+
+    print(f"\nConnecting to Kraken WebSocket...")
     print(f"Pairs: {args.pairs}")
     print(f"Timeframe: {args.timeframe}")
     print(f"Output: {output_file}")
