@@ -95,11 +95,20 @@ def _load_backtest_from_disk() -> None:
 
     script_dir = _os.path.dirname(_os.path.abspath(__file__))
     parent_dir = _os.path.dirname(script_dir)
+
+    # Try main backtest_results.json first (legacy single-symbol)
     json_path = _os.path.join(parent_dir, "backtest_results.json")
+    if _os.path.exists(json_path):
+        _load_single_backtest(json_path)
 
-    if not _os.path.exists(json_path):
-        return
+    # Also load alternating_backtest.json (multi-symbol test data)
+    alt_path = _os.path.join(parent_dir, "alternating_backtest.json")
+    if _os.path.exists(alt_path):
+        _load_multi_backtest(alt_path)
 
+
+def _load_single_backtest(json_path: str) -> None:
+    """Load legacy single-symbol backtest file."""
     print(f"Loading backtest results from {json_path}...")
     with open(json_path, "r") as f:
         result = json.load(f)
@@ -134,8 +143,6 @@ def _load_backtest_from_disk() -> None:
             trade["exit_time"] = ""
         enriched_trades.append(trade)
 
-    # Create a dummy portfolio object with the trades data for chart rendering
-    # We store trades separately since we can't serialize vectorbt.Portfolio to JSON
     class _TradesStore:
         def __init__(self, trades_data, summary_data, timestamp_map):
             self._trades = trades_data
@@ -153,10 +160,44 @@ def _load_backtest_from_disk() -> None:
             return len(self._trades)
 
     trades_store = _TradesStore(enriched_trades, result.get("summary", {}), timestamp_map)
-
-    # Patch the DataStore to serve these trades
     data_store._manual_trades = {result["symbol"]: trades_store}
     print(f"  Loaded {len(enriched_trades)} backtest trades for {result['symbol']}")
+
+
+def _load_multi_backtest(json_path: str) -> None:
+    """Load multi-symbol backtest file (alternating test strategy)."""
+    print(f"Loading alternating backtests from {json_path}...")
+    with open(json_path, "r") as f:
+        results = json.load(f)
+
+    for result in results:
+        symbol = result.get("symbol", "")
+        if not symbol:
+            continue
+
+        trades = result.get("trades", [])
+        summary = result.get("summary", {})
+
+        class _TradesStore:
+            def __init__(self, trades_data, summary_data):
+                self._trades = trades_data
+                self._summary = summary_data
+
+            @property
+            def records(self):
+                if not self._trades:
+                    return pd.DataFrame()
+                return pd.DataFrame(self._trades)
+
+            def count(self):
+                return len(self._trades)
+
+        ts_store = _TradesStore(trades, summary)
+
+        if not hasattr(data_store, "_manual_trades"):
+            data_store._manual_trades = {}
+        data_store._manual_trades[symbol] = ts_store
+        print(f"  Loaded {len(trades)} trades for {symbol}")
 
 
 def _load_live_trades() -> None:
@@ -644,7 +685,7 @@ HTML_PAGE = """
             if (!res.ok) return;
             const data = await res.json();
             const chartEl = document.getElementById('chart');
-            if (!chartEl.data || !chartInitialized) return;
+            if (!chartEl.data || lastRenderedSymbol === null) return;
 
             // Trace 4 = entry markers, Trace 5 = exit markers (stable indices from chart_builder.py)
             Plotly.restyle(chartEl, {x: [data.entry_x], y: [data.entry_y]}, [4]);
