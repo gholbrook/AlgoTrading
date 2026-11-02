@@ -204,6 +204,47 @@ def _load_live_trades() -> None:
     print(f"  Loaded {len(trades_data)} live trades for {symbol}")
 
 
+def _get_live_trades(symbol: str) -> Optional[dict]:
+    """Read live trades from JSON file on each request (hot-reload)."""
+    import os as _os
+
+    script_dir = _os.path.dirname(_os.path.abspath(__file__))
+    parent_dir = _os.path.dirname(script_dir)
+    json_path = _os.path.join(parent_dir, "live_trades.json")
+
+    if not _os.path.exists(json_path):
+        return None
+
+    try:
+        with open(json_path, "r") as f:
+            result = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
+
+    live_symbol = result.get("symbol", "")
+    if live_symbol != symbol:
+        return None
+
+    trades_data = result.get("trades", [])
+    summary = result.get("summary", {})
+
+    class _TradesStore:
+        def __init__(self, trades_data, summary_data):
+            self._trades = trades_data
+            self._summary = summary_data
+
+        @property
+        def records(self):
+            if not self._trades:
+                return pd.DataFrame()
+            return pd.DataFrame(self._trades)
+
+        def count(self):
+            return len(self._trades)
+
+    return {"trades": trades_data, "summary": summary}
+
+
 def _load_csv_assets() -> None:
     """Auto-load OHLCV CSV files from the data/ directory."""
     import os as _os
@@ -415,6 +456,30 @@ HTML_PAGE = """
             color: #9ca3af;
             font-size: 15px;
         }
+
+        /* Live indicator */
+        .live-badge {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            background: #fef3c7;
+            color: #92400e;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .live-badge.active { display: inline-flex; }
+        .live-dot {
+            width: 8px; height: 8px;
+            background: #f59e0b;
+            border-radius: 50%;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
     </style>
 </head>
 <body>
@@ -425,6 +490,7 @@ HTML_PAGE = """
                 <option value="">Loading assets…</option>
             </select>
             <button class="primary" onclick="toggleTrades()" id="trade-btn">Hide Trades</button>
+            <div class="live-badge" id="live-badge"><span class="live-dot"></span>LIVE</div>
         </div>
     </div>
     <div class="stats-bar" id="stats-bar"></div>
@@ -464,6 +530,7 @@ HTML_PAGE = """
         let tradeData = [];
         let sortCol = 'idx';
         let sortAsc = true;
+        let liveRefreshInterval = null;
 
         async function loadAssets() {
             const res = await fetch('/api/assets');
@@ -485,9 +552,24 @@ HTML_PAGE = """
                 Plotly.purge('chart');
                 document.getElementById('stats-bar').innerHTML = '';
                 renderTrades([]);
+                stopLiveRefresh();
                 return;
             }
             await refreshChart();
+        }
+
+        function startLiveRefresh() {
+            stopLiveRefresh();
+            liveRefreshInterval = setInterval(async () => {
+                if (currentSymbol) await refreshChart();
+            }, 5000); // poll every 5 seconds
+        }
+
+        function stopLiveRefresh() {
+            if (liveRefreshInterval) {
+                clearInterval(liveRefreshInterval);
+                liveRefreshInterval = null;
+            }
         }
 
         async function refreshChart() {
@@ -520,12 +602,18 @@ HTML_PAGE = """
                     <div class="stat-card"><div class="label">Max Drawdown</div><div class="value negative">${s.max_drawdown_pct.toFixed(2)}%</div></div>
                     ${s.sharpe_ratio !== null ? `<div class="stat-card"><div class="label">Sharpe Ratio</div><div class="value">${s.sharpe_ratio}</div></div>` : ''}
                 `;
+                // Show live badge when we have summary data (backtest or live)
+                document.getElementById('live-badge').classList.add('active');
             } else {
                 bar.innerHTML = '<div class="no-data">No backtest registered for this asset pair.</div>';
+                document.getElementById('live-badge').classList.remove('active');
             }
 
             // Load trades list
             loadTradesList();
+
+            // Start live polling if we have data
+            startLiveRefresh();
         }
 
         async function loadTradesList() {
@@ -668,11 +756,12 @@ async def api_chart(symbol: str = Query(..., description="Asset pair symbol (e.g
         trades = manual._trades
         summary = manual._summary
 
-    # Check live paper trades
-    if trades is None and hasattr(data_store, "_live_trades") and symbol in data_store._live_trades:
-        live = data_store._live_trades[symbol]
-        trades = live._trades
-        summary = live._summary
+    # Check live paper trades — hot-reload from disk on each request
+    if trades is None:
+        live = _get_live_trades(symbol)
+        if live:
+            trades = live["trades"]
+            summary = live["summary"]
 
     portfolio = data_store.get_portfolio(symbol)
     if portfolio is not None:
@@ -713,12 +802,10 @@ async def api_trades_list(symbol: str = Query(..., description="Asset pair symbo
         if isinstance(trades_data, list):
             return {"symbol": symbol, "trades": trades_data}
 
-    # Check live paper trades
-    if hasattr(data_store, "_live_trades") and symbol in data_store._live_trades:
-        live = data_store._live_trades[symbol]
-        trades_data = live._trades
-        if isinstance(trades_data, list):
-            return {"symbol": symbol, "trades": trades_data}
+    # Check live paper trades — hot-reload from disk on each request
+    live = _get_live_trades(symbol)
+    if live:
+        return {"symbol": symbol, "trades": live["trades"]}
 
     # Fall back to registered portfolio
     portfolio = data_store.get_portfolio(symbol)
