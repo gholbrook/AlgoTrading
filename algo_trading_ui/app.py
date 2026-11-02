@@ -518,6 +518,31 @@ HTML_PAGE = """
             0%, 100% { opacity: 1; }
             50% { opacity: 0.3; }
         }
+
+        /* Source toggle */
+        .source-toggle {
+            display: flex;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid #d1d5db;
+        }
+        .source-toggle button {
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            background: white;
+            color: #6b7280;
+            transition: all 0.15s;
+        }
+        .source-toggle button.active {
+            background: #3b82f6;
+            color: white;
+        }
+        .source-toggle button:first-child {
+            border-right: 1px solid #d1d5db;
+        }
     </style>
 </head>
 <body>
@@ -528,6 +553,10 @@ HTML_PAGE = """
                 <option value="">Loading assets…</option>
             </select>
             <button class="primary" onclick="toggleTrades()" id="trade-btn">Hide Trades</button>
+            <div class="source-toggle">
+                <button id="btn-backtest" class="active" onclick="setSource('backtest')">Backtest</button>
+                <button id="btn-live" onclick="setSource('live')">Live</button>
+            </div>
             <div class="live-badge" id="live-badge"><span class="live-dot"></span>LIVE</div>
         </div>
     </div>
@@ -570,6 +599,14 @@ HTML_PAGE = """
         let sortAsc = true;
         let liveRefreshInterval = null;
         let lastRenderedSymbol = null;  // Track which symbol was last rendered
+        let currentSource = 'backtest'; // 'backtest' or 'live'
+
+        function setSource(source) {
+            currentSource = source;
+            document.getElementById('btn-backtest').classList.toggle('active', source === 'backtest');
+            document.getElementById('btn-live').classList.toggle('active', source === 'live');
+            if (currentSymbol) refreshChart();
+        }
 
         async function loadAssets() {
             const res = await fetch('/api/assets');
@@ -617,7 +654,7 @@ HTML_PAGE = """
         }
 
         async function refreshChart() {
-            const params = new URLSearchParams({ symbol: currentSymbol, show_trades: showTrades });
+            const params = new URLSearchParams({ symbol: currentSymbol, show_trades: showTrades, source: currentSource });
             const res = await fetch(`/api/chart?${params}`);
             if (!res.ok) return;
             const data = await res.json();
@@ -645,17 +682,21 @@ HTML_PAGE = """
             }
 
             // Update stats
-            updateStats(data.summary);
+            updateStats(data.summary, data.is_live);
 
             // Load trades list and update chart markers
             loadTradesList();
             updateTradeMarkers();
 
-            // Start live polling if we have data
-            startLiveRefresh();
+            // Start live polling only when in live mode with data
+            if (currentSource === 'live' && data.summary) {
+                startLiveRefresh();
+            } else {
+                stopLiveRefresh();
+            }
         }
 
-        function updateStats(summary) {
+        function updateStats(summary, is_live = false) {
             const bar = document.getElementById('stats-bar');
             if (summary) {
                 const s = summary;
@@ -666,22 +707,27 @@ HTML_PAGE = """
                     <div class="stat-card"><div class="label">Max Drawdown</div><div class="value negative">${s.max_drawdown_pct.toFixed(2)}%</div></div>
                     ${s.sharpe_ratio !== null ? `<div class="stat-card"><div class="label">Sharpe Ratio</div><div class="value">${s.sharpe_ratio}</div></div>` : ''}
                 `;
-                document.getElementById('live-badge').classList.add('active');
+                // Only show LIVE badge when in live mode with actual live data
+                if (is_live) {
+                    document.getElementById('live-badge').classList.add('active');
+                } else {
+                    document.getElementById('live-badge').classList.remove('active');
+                }
             } else {
-                bar.innerHTML = '<div class="no-data">No backtest registered for this asset pair.</div>';
+                bar.innerHTML = '<div class="no-data">No ' + (currentSource === 'backtest' ? 'backtest' : 'live') + ' data registered for this asset pair.</div>';
                 document.getElementById('live-badge').classList.remove('active');
             }
         }
 
         function updateStatsFromChart() {
             // On live poll, re-fetch just the summary to update stats without touching chart
-            fetch(`/api/chart?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}`)
+            fetch(`/api/chart?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}&source=${currentSource}`)
                 .then(r => r.json())
-                .then(data => updateStats(data.summary));
+                .then(data => updateStats(data.summary, data.is_live));
         }
 
         async function updateTradeMarkers() {
-            const res = await fetch(`/api/trade-markers?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}`);
+            const res = await fetch(`/api/trade-markers?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}&source=${currentSource}`);
             if (!res.ok) return;
             const data = await res.json();
             const chartEl = document.getElementById('chart');
@@ -698,7 +744,7 @@ HTML_PAGE = """
 
         async function loadTradesList() {
             try {
-                const res = await fetch(`/api/trades?symbol=${encodeURIComponent(currentSymbol)}`);
+                const res = await fetch(`/api/trades?symbol=${encodeURIComponent(currentSymbol)}&source=${currentSource}`);
                 if (!res.ok) {
                     renderTrades([]);
                     return;
@@ -814,44 +860,52 @@ async def api_list_assets():
 
 
 @app.get("/api/chart")
-async def api_chart(symbol: str = Query(..., description="Asset pair symbol (e.g. ETH/BTC)"), show_trades: bool = Query(True)):
+async def api_chart(
+    symbol: str = Query(..., description="Asset pair symbol (e.g. ETH/BTC)"),
+    show_trades: bool = Query(True),
+    source: str = Query("backtest", description="Data source: 'backtest' or 'live'"),
+):
     """Return Plotly chart JSON for *symbol*.
 
     If a backtest is registered for this symbol, trade markers are overlaid.
     """
     df = data_store.get_asset_df(symbol)
     if df is None or df.empty:
-        # fig = build_empty_chart(symbol)
         return {
-            "figure": _fig_to_json_safe(fig),
+            "figure": _fig_to_json_safe(build_empty_chart(symbol)),
             "summary": None,
+            "is_live": False,
         }
 
     trades = None
     summary = None
+    is_live = False
 
-    # Check for manually loaded backtest trades (from JSON file) first
-    if hasattr(data_store, "_manual_trades") and symbol in data_store._manual_trades:
-        manual = data_store._manual_trades[symbol]
-        trades = manual._trades
-        summary = manual._summary
-
-    # Check live paper trades — hot-reload from disk on each request
-    if trades is None:
+    if source == "live":
+        # Only show live paper trades
         live = _get_live_trades(symbol)
         if live:
             trades = live["trades"]
             summary = live["summary"]
+            is_live = True
+    else:
+        # Show backtest trades (legacy portfolio or manual JSON)
+        portfolio = data_store.get_portfolio(symbol)
+        if portfolio is not None:
+            trades = DataStore.extract_trades(portfolio)
+            summary = DataStore.build_summary(portfolio).model_dump()
 
-    portfolio = data_store.get_portfolio(symbol)
-    if portfolio is not None:
-        trades = DataStore.extract_trades(portfolio)
-        summary = DataStore.build_summary(portfolio).model_dump()
+        # Also check manually loaded backtest trades (from JSON file)
+        if trades is None and hasattr(data_store, "_manual_trades") and symbol in data_store._manual_trades:
+            manual = data_store._manual_trades[symbol]
+            trades = manual._trades
+            summary = manual._summary
 
     fig = build_candlestick_chart(df, symbol, trades=trades, show_trades=show_trades and trades is not None)
     return {
         "figure": _fig_to_json_safe(fig),
         "summary": summary,
+        "is_live": is_live,
     }
 
 
@@ -873,19 +927,23 @@ async def api_backtest_info(symbol: str = Query(..., description="Asset pair sym
 
 
 @app.get("/api/trades")
-async def api_trades_list(symbol: str = Query(..., description="Asset pair symbol")):
+async def api_trades_list(
+    symbol: str = Query(..., description="Asset pair symbol"),
+    source: str = Query("backtest", description="Data source: 'backtest' or 'live'"),
+):
     """Return the full list of trades for *symbol* (backtest or live)."""
+    if source == "live":
+        live = _get_live_trades(symbol)
+        if live:
+            return {"symbol": symbol, "trades": live["trades"]}
+        raise HTTPException(status_code=404, detail=f"No live trades found for '{symbol}'")
+
     # Check manually loaded backtest trades first (from JSON)
     if hasattr(data_store, "_manual_trades") and symbol in data_store._manual_trades:
         manual = data_store._manual_trades[symbol]
         trades_data = manual._trades
         if isinstance(trades_data, list):
             return {"symbol": symbol, "trades": trades_data}
-
-    # Check live paper trades — hot-reload from disk on each request
-    live = _get_live_trades(symbol)
-    if live:
-        return {"symbol": symbol, "trades": live["trades"]}
 
     # Fall back to registered portfolio
     portfolio = data_store.get_portfolio(symbol)
@@ -897,7 +955,11 @@ async def api_trades_list(symbol: str = Query(..., description="Asset pair symbo
 
 
 @app.get("/api/trade-markers")
-async def api_trade_markers(symbol: str = Query(..., description="Asset pair symbol"), show_trades: bool = Query(True)):
+async def api_trade_markers(
+    symbol: str = Query(..., description="Asset pair symbol"),
+    show_trades: bool = Query(True),
+    source: str = Query("backtest", description="Data source: 'backtest' or 'live'"),
+):
     """Return trade marker x/y data for chart overlay (lightweight, no full figure).
 
     Returns {entry_x, entry_y, exit_x, exit_y} as lists of timestamps/numbers.
@@ -909,19 +971,18 @@ async def api_trade_markers(symbol: str = Query(..., description="Asset pair sym
 
     trades = None
 
-    # Check live paper trades — hot-reload from disk
-    live = _get_live_trades(symbol)
-    if live:
-        trades = live["trades"]
+    if source == "live":
+        live = _get_live_trades(symbol)
+        if live:
+            trades = live["trades"]
+    else:
+        portfolio = data_store.get_portfolio(symbol)
+        if portfolio is not None:
+            trades = DataStore.extract_trades(portfolio)
 
-    portfolio = data_store.get_portfolio(symbol)
-    if portfolio is not None:
-        trades = DataStore.extract_trades(portfolio)
-
-    # Check manual backtest trades
-    if trades is None and hasattr(data_store, "_manual_trades") and symbol in data_store._manual_trades:
-        manual = data_store._manual_trades[symbol]
-        trades = manual._trades
+        if trades is None and hasattr(data_store, "_manual_trades") and symbol in data_store._manual_trades:
+            manual = data_store._manual_trades[symbol]
+            trades = manual._trades
 
     if not show_trades or not trades:
         return {"entry_x": [], "entry_y": [], "exit_x": [], "exit_y": []}
