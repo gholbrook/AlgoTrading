@@ -356,27 +356,42 @@ def _run_strategy(symbol: str, df: pd.DataFrame, timestamp: pd.Timestamp):
 # ---------------------------------------------------------------------------
 
 def save_results():
-    """Save paper trading results to JSON."""
+    """Save paper trading results to JSON — supports multiple symbols."""
     global paper_trader
 
     if paper_trader is None:
         return
 
-    symbols = list(df_cache.keys())
-    first_df = df_cache[symbols[0]] if symbols else None
+    # Build per-symbol trade lists
+    symbol_trades = {}
+    for t in paper_trader.trades:
+        sym = t.symbol
+        if sym not in symbol_trades:
+            symbol_trades[sym] = []
+        symbol_trades[sym].append(t.to_dict())
+
+    # Build summary per symbol
+    symbol_summary = {}
+    for sym, trades in symbol_trades.items():
+        symbol_summary[sym] = {
+            "total_trades": len(trades),
+            "winning_trades": sum(1 for t in trades if t.get("pnl") and t["pnl"] > 0),
+            "losing_trades": sum(1 for t in trades if t.get("pnl") is not None and t["pnl"] <= 0),
+            "total_pnl": round(sum(t.get("pnl", 0) or 0 for t in trades), 4),
+        }
+
+    # Build per-symbol OHLCV start dates
+    symbol_start = {}
+    for sym, df in df_cache.items():
+        if len(df) > 0:
+            symbol_start[sym] = str(df.index[0])
 
     result = {
-        "symbol": symbols[0] if symbols else "",
-        "start_date": str(first_df.index[0]) if first_df is not None and len(first_df) > 0 else "",
+        "symbols": list(symbol_trades.keys()),
+        "trades": symbol_trades,
+        "summary": symbol_summary,
+        "start_dates": symbol_start,
         "end_date": str(datetime.now(timezone.utc).isoformat()),
-        "trades": [t.to_dict() for t in paper_trader.trades],
-        "summary": {
-            "total_trades": len(paper_trader.trades),
-            "winning_trades": sum(1 for t in paper_trader.trades if t.pnl and t.pnl > 0),
-            "losing_trades": sum(1 for t in paper_trader.trades if t.pnl is not None and t.pnl <= 0),
-            "total_pnl": round(sum(t.pnl or 0 for t in paper_trader.trades), 4),
-            "final_equity": round(paper_trader.equity_history[-1]["equity"] if paper_trader.equity_history else INITIAL_CASH, 4),
-        },
     }
 
     # Merge with existing file if present
@@ -384,11 +399,19 @@ def save_results():
         try:
             with open(output_file) as f:
                 existing = json.load(f)
-            # Append trades, dedupe by entry_time
-            existing_trades = {t["entry_time"]: t for t in existing.get("trades", [])}
-            for t in result["trades"]:
-                existing_trades[t["entry_time"]] = t
-            result["trades"] = list(existing_trades.values())
+            for sym in symbol_trades:
+                existing_trades = {t["entry_time"]: t for t in existing.get("trades", {}).get(sym, [])}
+                for t in symbol_trades[sym]:
+                    existing_trades[t["entry_time"]] = t
+                result["trades"][sym] = list(existing_trades.values())
+            # Preserve existing data for symbols not yet in new result
+            for sym in existing.get("symbols", []):
+                if sym not in result["trades"]:
+                    result["trades"][sym] = existing.get("trades", {}).get(sym, [])
+                    result["summary"][sym] = existing.get("summary", {}).get(sym, {})
+                    if sym in existing.get("start_dates", {}):
+                        result.setdefault("start_dates", {})[sym] = existing["start_dates"][sym]
+            result["symbols"] = list(result["trades"].keys())
             result["end_date"] = str(datetime.now(timezone.utc).isoformat())
         except (json.JSONDecodeError, KeyError):
             pass
@@ -396,7 +419,8 @@ def save_results():
     with open(output_file, "w") as f:
         json.dump(result, f, indent=2)
 
-    print(f"[SAVE] {len(result['trades'])} trades saved to {output_file}")
+    total = sum(len(v) for v in result["trades"].values())
+    print(f"[SAVE] {total} trades saved to {output_file} ({', '.join(result['symbols'])})")
 
 
 # ---------------------------------------------------------------------------

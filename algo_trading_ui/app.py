@@ -221,28 +221,25 @@ def _get_live_trades(symbol: str) -> Optional[dict]:
     except (json.JSONDecodeError, IOError):
         return None
 
-    live_symbol = result.get("symbol", "")
-    if live_symbol != symbol:
-        return None
+    # New multi-symbol format: trades is a dict of symbol -> list
+    trades_data = result.get("trades", {})
+    if isinstance(trades_data, dict) and symbol in trades_data:
+        return {
+            "trades": trades_data[symbol],
+            "summary": result.get("summary", {}).get(symbol, {}),
+        }
 
-    trades_data = result.get("trades", [])
-    summary = result.get("summary", {})
+    # Legacy single-symbol format: trades is a list with matching symbol
+    if isinstance(trades_data, list):
+        matching = [t for t in trades_data if t.get("symbol") == symbol or True]
+        live_symbol = result.get("symbol", "")
+        if live_symbol == symbol and trades_data:
+            return {
+                "trades": trades_data,
+                "summary": result.get("summary", {}),
+            }
 
-    class _TradesStore:
-        def __init__(self, trades_data, summary_data):
-            self._trades = trades_data
-            self._summary = summary_data
-
-        @property
-        def records(self):
-            if not self._trades:
-                return pd.DataFrame()
-            return pd.DataFrame(self._trades)
-
-        def count(self):
-            return len(self._trades)
-
-    return {"trades": trades_data, "summary": summary}
+    return None
 
 
 def _load_csv_assets() -> None:
