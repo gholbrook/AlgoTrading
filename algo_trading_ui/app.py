@@ -807,8 +807,8 @@ HTML_PAGE = """
             loadTradesList();
             updateTradeMarkers();
 
-            // Start live polling only when in live mode with data
-            if (currentSource === 'live' && data.summary) {
+            // Start live polling whenever in live mode (regardless of trade data)
+            if (currentSource === 'live') {
                 startLiveRefresh();
             } else {
                 stopLiveRefresh();
