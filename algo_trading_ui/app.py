@@ -717,11 +717,58 @@ HTML_PAGE = """
             stopLiveRefresh();
             liveRefreshInterval = setInterval(async () => {
                 if (currentSymbol && lastRenderedSymbol === currentSymbol) {
-                    // Same symbol — only update stats and markers, preserve viewport
+                    // Same symbol — update candle data, stats and markers, preserve viewport
+                    await refreshCandleData();
                     updateStatsFromChart();
                     updateTradeMarkers();
                 }
             }, 5000); // poll every 5 seconds
+        }
+
+        async function refreshCandleData() {
+            // Re-fetch chart data to get updated candlestick values, then update traces in-place
+            try {
+                const res = await fetch(`/api/chart?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}&source=${currentSource}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                const chartEl = document.getElementById('chart');
+                if (!chartEl.data) return;
+
+                // Trace 0 = candlestick — update x, open, high, low, close in-place
+                Plotly.restyle(chartEl, {
+                    x: [data.figure.data[0].x],
+                    open: [data.figure.data[0].open],
+                    high: [data.figure.data[0].high],
+                    low: [data.figure.data[0].low],
+                    close: [data.figure.data[0].close],
+                    name: [data.figure.data[0].name],
+                }, [0]);
+
+                // Trace 1 = SMA (if present)
+                if (data.figure.data.length > 1 && data.figure.data[1].type === 'scatter') {
+                    const sma = data.figure.data[1];
+                    if (sma.x && sma.x.length > 0) {
+                        Plotly.restyle(chartEl, {
+                            x: [sma.x],
+                            y: [sma.y],
+                        }, [1]);
+                    }
+                }
+
+                // Trace 2 = BB Upper, Trace 3 = BB Lower
+                if (data.figure.data.length > 2 && data.figure.data[2].x) {
+                    Plotly.restyle(chartEl, {
+                        x: [data.figure.data[2].x],
+                        y: [data.figure.data[2].y],
+                    }, [2]);
+                    Plotly.restyle(chartEl, {
+                        x: [data.figure.data[3].x],
+                        y: [data.figure.data[3].y],
+                    }, [3]);
+                }
+            } catch (e) {
+                // Silently fail — don't disrupt the chart
+            }
         }
 
         function stopLiveRefresh() {
