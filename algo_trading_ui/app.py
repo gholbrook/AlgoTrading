@@ -393,6 +393,7 @@ HTML_PAGE = """
             border-bottom: 1px solid #e5e7eb;
             flex-wrap: wrap;
         }
+        .stats-bar.hidden { display: none; }
         .stat-card {
             flex: 1;
             min-width: 140px;
@@ -408,6 +409,7 @@ HTML_PAGE = """
         .chart-container {
             padding: 16px 24px;
         }
+        .chart-container.hidden { display: none; }
         #chart {
             width: 100%;
             height: 75vh;
@@ -698,7 +700,10 @@ HTML_PAGE = """
 
         function updateStats(summary, is_live = false) {
             const bar = document.getElementById('stats-bar');
+            const chartEl = document.getElementById('chart');
             if (summary) {
+                bar.classList.remove('hidden');
+                chartEl.style.height = '75vh';
                 const s = summary;
                 bar.innerHTML = `
                     <div class="stat-card"><div class="label">Total Trades</div><div class="value">${s.total_trades}</div></div>
@@ -714,7 +719,8 @@ HTML_PAGE = """
                     document.getElementById('live-badge').classList.remove('active');
                 }
             } else {
-                bar.innerHTML = '<div class="no-data">No ' + (currentSource === 'backtest' ? 'backtest' : 'live') + ' data registered for this asset pair.</div>';
+                bar.classList.add('hidden');
+                chartEl.style.height = '85vh';
                 document.getElementById('live-badge').classList.remove('active');
             }
         }
@@ -766,10 +772,12 @@ HTML_PAGE = """
                 body.innerHTML = '<tr><td colspan="7" class="trade-empty">No trades to display.</td></tr>';
                 countEl.textContent = '';
                 titleEl.textContent = 'Trades';
+                document.querySelector('.trades-section').style.display = 'none';
                 return;
             }
 
             const symbol = currentSymbol;
+            document.querySelector('.trades-section').style.display = '';
             countEl.textContent = `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
             titleEl.textContent = `Trades — ${symbol}`;
 
