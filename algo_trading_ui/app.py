@@ -582,7 +582,10 @@ HTML_PAGE = """
                 return;
             }
 
-            Plotly.newPlot('chart', data.figure.data, data.figure.layout, {
+            // Use Plotly.react instead of newPlot to preserve zoom/pan state.
+            // react() only updates data/layout without resetting the viewport.
+            const chartEl = document.getElementById('chart');
+            Plotly.react(chartEl, data.figure.data, data.figure.layout, {
                 responsive: true,
                 displayModeBar: true,
                 modeBarButtonsToRemove: ['lasso2d', 'select2d'],
