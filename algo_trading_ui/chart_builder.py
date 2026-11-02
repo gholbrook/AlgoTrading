@@ -47,17 +47,17 @@ def build_candlestick_chart(
     ))
 
     # -- Volume bars (if present) --
-    if "volume" in df.columns:
-        colors = ["#26a69a" if c >= o else "#ef5350"
-                  for o, c in zip(df["open"], df["close"])]
-        fig.add_trace(go.Bar(
-            x=df.index,
-            y=df["volume"],
-            name="Volume",
-            marker_color=colors,
-            opacity=0.3,
-            yaxis="y2",
-        ))
+    # if "volume" in df.columns:
+    #     colors = ["#26a69a" if c >= o else "#ef5350"
+    #               for o, c in zip(df["open"], df["close"])]
+    #     fig.add_trace(go.Bar(
+    #         x=df.index,
+    #         y=df["volume"],
+    #         name="Volume",
+    #         marker_color=colors,
+    #         opacity=0.3,
+    #         yaxis="y2",
+    #     ))
 
     # -- Trade markers --
     if show_trades and trades:
@@ -69,15 +69,22 @@ def build_candlestick_chart(
         exit_times = []
 
         for t in trades:
-            if t.entry_idx is not None and t.entry_idx < len(df):
-                entry_indices.append(t.entry_idx)
-                entry_prices.append(t.entry_price)
-                entry_times.append(t.entry_time)
+            entry_idx = t.entry_idx if hasattr(t, 'entry_idx') else t.get('entry_idx')
+            exit_idx = t.exit_idx if hasattr(t, 'exit_idx') else t.get('exit_idx')
+            entry_price = t.entry_price if hasattr(t, 'entry_price') else t.get('entry_price')
+            exit_price = t.exit_price if hasattr(t, 'exit_price') else t.get('exit_price')
+            entry_time = getattr(t, 'entry_time', None) or (t.get('entry_time') if isinstance(t, dict) else None)
+            exit_time = getattr(t, 'exit_time', None) or (t.get('exit_time') if isinstance(t, dict) else None)
 
-            if t.exit_idx is not None and t.exit_idx < len(df):
-                exit_indices.append(t.exit_idx)
-                exit_prices.append(t.exit_price or 0)
-                exit_times.append(t.exit_time or "")
+            if entry_idx is not None and entry_idx < len(df):
+                entry_indices.append(entry_idx)
+                entry_prices.append(entry_price)
+                entry_times.append(entry_time)
+
+            if exit_idx is not None and exit_idx < len(df):
+                exit_indices.append(exit_idx)
+                exit_prices.append(exit_price or 0)
+                exit_times.append(exit_time or "")
 
         # Entry markers (green upward triangles for longs, red downward for shorts)
         if entry_indices:
@@ -133,9 +140,11 @@ def build_candlestick_chart(
             overlaying="y",
             side="right",
             range=[0, 1],
-            showgrid=True,
-            gridcolor="rgba(128,128,128,0.1)",
+            showgrid=False,
+            zeroline=False,
             fixedrange=True,
+            anchor="x",
+            matches=None,
         ),
         dragmode="zoom",
         hovermode="x unified",
