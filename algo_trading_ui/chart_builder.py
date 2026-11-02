@@ -1,6 +1,7 @@
 """Plotly candlestick chart builder with trade markers and layout controls."""
 
 from typing import Optional
+import numpy as np
 import plotly.graph_objects as go
 import pandas as pd
 
@@ -61,35 +62,56 @@ def build_candlestick_chart(
 
     # -- Trade markers --
     if show_trades and trades:
-        entry_indices = []
-        exit_indices = []
-        entry_prices = []
-        exit_prices = []
         entry_times = []
         exit_times = []
+        entry_prices = []
+        exit_prices = []
 
         for t in trades:
             entry_idx = t.entry_idx if hasattr(t, 'entry_idx') else t.get('entry_idx')
             exit_idx = t.exit_idx if hasattr(t, 'exit_idx') else t.get('exit_idx')
             entry_price = t.entry_price if hasattr(t, 'entry_price') else t.get('entry_price')
             exit_price = t.exit_price if hasattr(t, 'exit_price') else t.get('exit_price')
+
+            # Try timestamp-based lookup first (for JSON-loaded trades with time data)
             entry_time = getattr(t, 'entry_time', None) or (t.get('entry_time') if isinstance(t, dict) else None)
             exit_time = getattr(t, 'exit_time', None) or (t.get('exit_time') if isinstance(t, dict) else None)
 
-            if entry_idx is not None and entry_idx < len(df):
-                entry_indices.append(entry_idx)
-                entry_prices.append(entry_price)
-                entry_times.append(entry_time)
+            # Use timestamp matching when available and index-based as fallback
+            def find_bar_index(time_str):
+                """Find the closest bar index by timestamp."""
+                if time_str:
+                    try:
+                        target = pd.Timestamp(time_str)
+                        csv_index = df.index
+                        if target.tzinfo is not None:
+                            target = target.tz_localize(None)
+                        if csv_index.tzinfo is not None:
+                            csv_index = csv_index.tz_localize(None)
+                        # Use total_seconds() for correct diff calculation
+                        diffs_s = np.abs((csv_index - target).total_seconds())
+                        min_pos = int(np.argmin(diffs_s))
+                        if diffs_s[min_pos] < 1800:  # 30 minutes in seconds
+                            return min_pos
+                    except Exception:
+                        pass
+                return None
 
-            if exit_idx is not None and exit_idx < len(df):
-                exit_indices.append(exit_idx)
+            entry_pos = find_bar_index(entry_time) if entry_time else (int(entry_idx) if entry_idx is not None and entry_idx < len(df) else None)
+            exit_pos = find_bar_index(exit_time) if exit_time else (int(exit_idx) if exit_idx is not None and exit_idx < len(df) else None)
+
+            if entry_pos is not None:
+                entry_times.append(entry_pos)
+                entry_prices.append(entry_price)
+
+            if exit_pos is not None:
+                exit_times.append(exit_pos)
                 exit_prices.append(exit_price or 0)
-                exit_times.append(exit_time or "")
 
         # Entry markers (green upward triangles for longs, red downward for shorts)
-        if entry_indices:
-            entry_x = df.index[entry_indices]
-            entry_y = df.iloc[entry_indices]["low"].values.copy().astype(float)
+        if entry_times:
+            entry_x = df.index[entry_times]
+            entry_y = df.iloc[entry_times]["low"].values.copy().astype(float)
             # Place entries slightly below the low for visibility
             entry_y = [max(0, y - (y * 0.002)) for y in entry_y]
 
@@ -103,9 +125,9 @@ def build_candlestick_chart(
             ))
 
         # Exit markers
-        if exit_indices:
-            exit_x = df.index[exit_indices]
-            exit_y = df.iloc[exit_indices]["high"].values.copy().astype(float)
+        if exit_times:
+            exit_x = df.index[exit_times]
+            exit_y = df.iloc[exit_times]["high"].values.copy().astype(float)
             # Place exits slightly above the high for visibility
             exit_y = [y + (y * 0.002) for y in exit_y]
 

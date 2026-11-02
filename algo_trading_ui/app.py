@@ -104,7 +104,7 @@ def _load_backtest_from_disk() -> None:
     with open(json_path, "r") as f:
         result = json.load(f)
 
-    # Reconstruct DataFrame
+    # Reconstruct full OHLCV DataFrame from backtest data (for timestamp lookup)
     raw = result["data"]
     reconstructed = {}
     for idx_str, row in raw.items():
@@ -113,15 +113,34 @@ def _load_backtest_from_disk() -> None:
                 reconstructed[k] = []
             reconstructed[k].append(v)
 
-    df = pd.DataFrame(reconstructed, index=pd.to_datetime(list(raw.keys())))
-    register_asset(result["symbol"], df, result["timeframe"], result["start_date"], result["end_date"])
+    full_df = pd.DataFrame(reconstructed, index=pd.to_datetime(list(raw.keys())))
+
+    # Build timestamp lookup: position -> ISO timestamp string
+    timestamp_map = {i: ts.isoformat() for i, ts in enumerate(full_df.index)}
+
+    # Enrich trades with timestamps from the backtest data indices
+    enriched_trades = []
+    for t in result.get("trades", []):
+        entry_idx = t.get("entry_idx")
+        exit_idx = t.get("exit_idx")
+        trade = dict(t)
+        if entry_idx is not None and entry_idx in timestamp_map:
+            trade["entry_time"] = timestamp_map[entry_idx]
+        else:
+            trade["entry_time"] = ""
+        if exit_idx is not None and exit_idx in timestamp_map:
+            trade["exit_time"] = timestamp_map[exit_idx]
+        else:
+            trade["exit_time"] = ""
+        enriched_trades.append(trade)
 
     # Create a dummy portfolio object with the trades data for chart rendering
     # We store trades separately since we can't serialize vectorbt.Portfolio to JSON
     class _TradesStore:
-        def __init__(self, trades_data, summary_data):
+        def __init__(self, trades_data, summary_data, timestamp_map):
             self._trades = trades_data
             self._summary = summary_data
+            self._timestamp_map = timestamp_map
 
         @property
         def records(self):
@@ -133,11 +152,11 @@ def _load_backtest_from_disk() -> None:
         def count(self):
             return len(self._trades)
 
-    trades_store = _TradesStore(result.get("trades", []), result.get("summary", {}))
+    trades_store = _TradesStore(enriched_trades, result.get("summary", {}), timestamp_map)
 
     # Patch the DataStore to serve these trades
     data_store._manual_trades = {result["symbol"]: trades_store}
-    print(f"  Loaded {len(result['trades'])} trades for {result['symbol']}")
+    print(f"  Loaded {len(enriched_trades)} trades for {result['symbol']}")
 
 
 def _load_csv_assets() -> None:
