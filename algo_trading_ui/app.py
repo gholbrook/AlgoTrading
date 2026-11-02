@@ -294,11 +294,12 @@ def _load_csv_assets() -> None:
     if not _os.path.isdir(data_dir):
         return
 
-    csv_files = sorted([f for f in _os.listdir(data_dir) if f.endswith(".csv")])
+    # Load static CSVs first
+    csv_files = sorted([f for f in _os.listdir(data_dir) if f.endswith(".csv") and "_live_" not in f])
     if not csv_files:
         return
 
-    print(f"Found {len(csv_files)} CSV file(s) in data/: {', '.join(csv_files)}")
+    print(f"Found {len(csv_files)} static CSV file(s) in data/: {', '.join(csv_files)}")
 
     for csv_file in csv_files:
         filepath = _os.path.join(data_dir, csv_file)
@@ -326,10 +327,77 @@ def _load_csv_assets() -> None:
             end_date = str(df.index[-1].date())
 
             register_asset(symbol, df, timeframe, start_date, end_date)
-            print(f"  Loaded {symbol} ({len(df)} bars, {timeframe}, {start_date} to {end_date})")
+            print(f"  Loaded static {symbol} ({len(df)} bars, {timeframe}, {start_date} to {end_date})")
 
         except Exception as e:
             print(f"  ERROR loading {csv_file}: {e}")
+
+    # Also load live CSVs from data/live/ (these will be extended in real-time)
+    live_dir = _os.path.join(parent_dir, "data", "live")
+    if _os.path.isdir(live_dir):
+        live_files = sorted([f for f in _os.listdir(live_dir) if f.endswith(".csv") and "_live_" in f])
+        if live_files:
+            print(f"Found {len(live_files)} live CSV file(s) in data/live/: {', '.join(live_files)}")
+
+            for csv_file in live_files:
+                filepath = _os.path.join(live_dir, csv_file)
+                try:
+                    # Parse filename: ETH_BTC_live_5m.csv -> symbol=ETH/BTC, timeframe=5min
+                    stem = csv_file.replace(".csv", "")
+                    parts = stem.rsplit("_live_", 1)
+                    if len(parts) != 2:
+                        print(f"  Skipping {csv_file}: unexpected filename format")
+                        continue
+
+                    timeframe = parts[1]  # e.g. "5m"
+                    symbol = parts[0].replace("_", "/")
+
+                    df = pd.read_csv(filepath, index_col=0, parse_dates=True)
+                    required = ["open", "high", "low", "close", "volume"]
+                    if not all(col in df.columns for col in required):
+                        print(f"  Skipping {csv_file}: missing OHLCV columns")
+                        continue
+
+                    start_date = str(df.index[0].date())
+                    end_date = str(df.index[-1].date())
+
+                    # Register live data — it will be reloaded on each request via _reload_live_csv()
+                    register_asset(symbol, df, timeframe, start_date, end_date)
+                    print(f"  Loaded live {symbol} ({len(df)} bars, {timeframe}, {start_date} to {end_date})")
+
+                except Exception as e:
+                    print(f"  ERROR loading live CSV {csv_file}: {e}")
+
+
+def _reload_live_csv(symbol: str) -> None:
+    """Reload a live CSV file from disk for the given symbol.
+
+    This allows the UI to pick up new candles appended by live_paper_trade.py
+    without restarting the server.
+    """
+    import os as _os
+
+    script_dir = _os.path.dirname(_os.path.abspath(__file__))
+    parent_dir = _os.path.dirname(script_dir)
+    live_dir = _os.path.join(parent_dir, "data", "live")
+    if not _os.path.isdir(live_dir):
+        return
+
+    safe_symbol = symbol.replace("/", "_")
+    csv_path = _os.path.join(live_dir, f"{safe_symbol}_live_5m.csv")
+
+    if not _os.path.exists(csv_path):
+        return
+
+    try:
+        df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+        required = ["open", "high", "low", "close", "volume"]
+        if all(col in df.columns for col in required) and len(df) > 0:
+            start_date = str(df.index[0].date())
+            end_date = str(df.index[-1].date())
+            register_asset(symbol, df, "5min", start_date, end_date)
+    except Exception as e:
+        print(f"  ERROR reloading live CSV for {symbol}: {e}")
 
 
 _load_backtest_from_disk_called = False
@@ -876,7 +944,12 @@ async def api_chart(
     """Return Plotly chart JSON for *symbol*.
 
     If a backtest is registered for this symbol, trade markers are overlaid.
+    When source='live', reloads the live CSV from disk to pick up new candles.
     """
+    # Reload live CSV on each request so new candles appear without restart
+    if source == "live":
+        _reload_live_csv(symbol)
+
     df = data_store.get_asset_df(symbol)
     if df is None or df.empty:
         return {
@@ -973,6 +1046,10 @@ async def api_trade_markers(
     Returns {entry_x, entry_y, exit_x, exit_y} as lists of timestamps/numbers.
     The frontend uses Plotly.restyle to update existing trace indices 4 and 5.
     """
+    # Reload live CSV on each request so trade markers align with new candles
+    if source == "live":
+        _reload_live_csv(symbol)
+
     df = data_store.get_asset_df(symbol)
     if df is None or df.empty:
         return {"entry_x": [], "entry_y": [], "exit_x": [], "exit_y": []}

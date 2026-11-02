@@ -32,6 +32,7 @@ import websocket
 DEFAULT_PAIRS = ["ETH/BTC"]
 DEFAULT_TIMEFRAME = "5min"
 DEFAULT_OUTPUT = "live_trades.json"
+LIVE_DATA_DIR = "data/live"
 
 # Strategy parameters (mirrors main.py)
 SMA_WINDOW = 200
@@ -221,6 +222,45 @@ paper_trader: Optional[PaperTrader] = None
 output_file: str = DEFAULT_OUTPUT
 
 
+def _append_live_csv(symbol: str, timestamp: pd.Timestamp, open_price: float,
+                     high_price: float, low_price: float, close_price: float,
+                     volume: float):
+    """Append a new candle to the live CSV file for UI consumption."""
+    os.makedirs(LIVE_DATA_DIR, exist_ok=True)
+    safe_symbol = symbol.replace("/", "_")
+    csv_path = os.path.join(LIVE_DATA_DIR, f"{safe_symbol}_live_5m.csv")
+
+    # Check if file exists; if so, check if we already have this timestamp
+    if os.path.exists(csv_path):
+        try:
+            existing = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+            if len(existing) > 0 and existing.index[-1] >= timestamp:
+                # Already have this candle or newer — update in-place
+                existing.loc[timestamp] = [open_price, high_price, low_price, close_price, volume]
+                existing.to_csv(csv_path)
+                return
+        except Exception:
+            pass
+
+    # Append new row
+    row = pd.DataFrame({
+        "open": [open_price], "high": [high_price], "low": [low_price],
+        "close": [close_price], "volume": [volume],
+    }, index=pd.DatetimeIndex([timestamp]))
+
+    if os.path.exists(csv_path):
+        try:
+            existing = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+            combined = pd.concat([existing, row])
+            # Remove duplicates keeping last
+            combined = combined[~combined.index.duplicated(keep='last')]
+            combined.to_csv(csv_path)
+        except Exception:
+            row.to_csv(csv_path)
+    else:
+        row.to_csv(csv_path)
+
+
 def _kraken_pair_to_symbol(pair: str) -> Optional[str]:
     """Convert Kraken's internal pair format to human-readable symbol.
 
@@ -290,6 +330,7 @@ def on_message(ws: websocket.WebSocketApp, message: str):
         df = df_cache[symbol]
 
         # Check if this candle is newer than what we have
+        new_candle = False
         if len(df) > 0 and df.index[-1] >= timestamp:
             # Update the last candle (in-progress bar)
             df.loc[df.index[-1]] = [open_price, high_price, low_price,
@@ -302,6 +343,10 @@ def on_message(ws: websocket.WebSocketApp, message: str):
                 "volume": [volume],
             }, index=pd.DatetimeIndex([timestamp]))
             df_cache[symbol] = pd.concat([df, row]) if len(df) > 0 else row
+            new_candle = True
+
+        # Append to live CSV file for UI consumption
+        _append_live_csv(symbol, timestamp, open_price, high_price, low_price, close_price, volume)
 
         # Run strategy on this candle
         _run_strategy(symbol, df_cache[symbol], timestamp)
