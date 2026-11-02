@@ -23,7 +23,6 @@ from typing import Optional
 import ccxt
 import numpy as np
 import pandas as pd
-import websocket
 
 
 # ---------------------------------------------------------------------------
@@ -365,115 +364,13 @@ def _append_live_csv(symbol: str, timestamp: pd.Timestamp, open_price: float,
 
 
 # ---------------------------------------------------------------------------
-# WebSocket client
+# Global state for live trading engine
 # ---------------------------------------------------------------------------
 
 # Global cache for OHLCV data (symbol -> DataFrame) — includes historical + live
 df_cache: dict[str, pd.DataFrame] = {}
 paper_trader: Optional[PaperTrader] = None
 output_file: str = DEFAULT_OUTPUT
-
-
-def _kraken_pair_to_symbol(pair: str) -> Optional[str]:
-    """Convert Kraken's internal pair format to human-readable symbol.
-
-    Examples:
-        XETHXXBT  -> ETH/BTC
-        XXBTZUSD  -> BTC/USD
-        XSOLZUSDT -> SOL/USDT
-    """
-    if "XX" in pair:
-        parts = pair.split("XX")
-        base = parts[0].lstrip("X")
-        quote = parts[1].lstrip("X")
-        return f"{base}/{quote}"
-    return None
-
-
-def on_message(ws: websocket.WebSocketApp, message: str):
-    """Handle incoming WebSocket messages."""
-    try:
-        data = json.loads(message)
-    except json.JSONDecodeError:
-        return
-
-    # Handle subscription result / error messages (no "data" field)
-    if "data" not in data:
-        event = data.get("event", "")
-        if event == "subscriptionResult":
-            channels = data.get("result", [])
-            for ch in channels:
-                print(f"[WS] Subscribed to {ch.get('channel')} on {data.get('pair', '')}")
-        elif event == "error":
-            print(f"[WS ERROR] {data.get('message', 'Unknown error')}")
-        return
-
-    if data.get("channel") != "ohlc":
-        return
-
-    for item in data["data"]:
-        try:
-            candle = json.loads(item)
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-        if len(candle) < 10:
-            continue
-
-        pair_raw = data.get("pair", "")
-        symbol = _kraken_pair_to_symbol(pair_raw)
-        if not symbol:
-            continue
-
-        # Candle format: [tradeId, start, end, close, high, low, open, vwap, volume, count]
-        timestamp = pd.Timestamp(int(candle[1]), unit="s", tz="UTC")
-        close_price = float(candle[3])
-        high_price = float(candle[4])
-        low_price = float(candle[5])
-        open_price = float(candle[6])
-        volume = float(candle[7])
-
-        # Update or create OHLCV DataFrame for this symbol (includes historical data)
-        if symbol not in df_cache:
-            df_cache[symbol] = pd.DataFrame({
-                "open": [], "high": [], "low": [],
-                "close": [], "volume": [],
-            }, index=pd.DatetimeIndex([]))
-
-        df = df_cache[symbol]
-
-        # Check if this candle is newer than what we have
-        if len(df) > 0 and df.index[-1] >= timestamp:
-            # Update the last candle (in-progress bar)
-            df.loc[df.index[-1]] = [open_price, high_price, low_price,
-                                     close_price, volume]
-        else:
-            # New candle — finalize previous if exists, add new one
-            row = pd.DataFrame({
-                "open": [open_price], "high": [high_price],
-                "low": [low_price], "close": [close_price],
-                "volume": [volume],
-            }, index=pd.DatetimeIndex([timestamp]))
-            df_cache[symbol] = pd.concat([df, row]) if len(df) > 0 else row
-
-        # Append to live CSV file for UI consumption
-        _append_live_csv(symbol, timestamp, open_price, high_price, low_price, close_price, volume)
-
-        # Run strategy on this candle (uses combined historical + live data)
-        _run_strategy(symbol, df_cache[symbol], timestamp)
-
-
-def on_error(ws, error):
-    print(f"[WS ERROR] {error}")
-
-
-def on_close(ws, close_status_code, close_msg):
-    print("[WS CLOSED] Connection closed.")
-    save_results()
-
-
-def on_open(ws):
-    print("[WS OPEN] Connected to Kraken WebSocket.")
 
 
 def _run_strategy(symbol: str, df: pd.DataFrame, timestamp: pd.Timestamp):
@@ -506,10 +403,6 @@ def _run_strategy(symbol: str, df: pd.DataFrame, timestamp: pd.Timestamp):
         "positions": len(sum(paper_trader.positions.values(), [])),
     })
 
-
-# ---------------------------------------------------------------------------
-# Persistence
-# ---------------------------------------------------------------------------
 
 def save_results():
     """Save paper trading results to JSON — supports multiple symbols."""
@@ -580,48 +473,65 @@ def save_results():
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Live data polling (REST API)
+# Kraken v2 WebSocket no longer supports the old subscribe format,
+# so we poll the REST OHLC endpoint every 60 seconds instead.
 # ---------------------------------------------------------------------------
 
-def _symbol_to_kraken(symbol: str) -> str:
-    """Convert human-readable symbol to Kraken internal format.
-
-    ETH/BTC  -> XETHXXBT
-    BTC/USD  -> XXBTZUSD
-    SOL/USDT -> XSOLZUSDT
-    """
-    base, quote = symbol.split("/")
-    kraken_map = {
-        "BTC": "XXBT",
-        "ETH": "XETH",
-        "SOL": "XSOL",
-        "DOT": "XDOT",
-        "ADA": "XADA",
-        "XRP": "XXRP",
-        "USDT": "ZUSDT",
-        "USD": "ZUSD",
-    }
-    base_k = kraken_map.get(base, base)
-    quote_k = kraken_map.get(quote, quote)
-    return f"{base_k}XX{quote_k}"
+def _fetch_latest_candles(symbol: str, exchange: ccxt.kraken, timeframe: str = "5m",
+                           limit: int = 10) -> pd.DataFrame:
+    """Fetch the latest N candles from Kraken REST API."""
+    try:
+        rows = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+        df.set_index("timestamp", inplace=False)
+        return df
+    except Exception as e:
+        print(f"  [FETCH] Error fetching {symbol}: {e}")
+        return pd.DataFrame()
 
 
-def _subscribe(ws, pairs_str):
-    """Send subscription message after WebSocket opens."""
-    sub_msg = json.dumps({
-        "event": "subscribe",
-        "pair": pairs_str,
-        "topic": "ohlc",
-        "interval": 5  # 5 minutes
-    })
-    ws.send(sub_msg)
-    print(f"[SUB] Subscribed to {pairs_str} ohlc(5min)")
+def _poll_and_update(symbol: str, exchange: ccxt.kraken, timeframe: str = "5m"):
+    """Poll Kraken REST for latest candles and update live CSV + strategy."""
+    df_new = _fetch_latest_candles(symbol, exchange, timeframe)
+    if df_new.empty:
+        return
+
+    safe_symbol = symbol.replace("/", "_")
+    csv_path = os.path.join(LIVE_DATA_DIR, f"{safe_symbol}_live_5m.csv")
+
+    # Load existing live data
+    existing = pd.DataFrame()
+    if os.path.exists(csv_path):
+        try:
+            existing = pd.read_csv(csv_path, index_col=0, parse_dates=True)
+        except Exception:
+            pass
+
+    # Combine and deduplicate
+    all_data = pd.concat([existing, df_new]) if len(existing) > 0 else df_new
+    all_data = all_data[~all_data.index.duplicated(keep='last')]
+    all_data = all_data.sort_index()
+
+    # Save updated CSV
+    os.makedirs(LIVE_DATA_DIR, exist_ok=True)
+    all_data.to_csv(csv_path)
+
+    # Update in-memory cache for strategy evaluation
+    df_cache[symbol] = all_data
+
+    # Run strategy on the latest candle
+    if len(all_data) >= SMA_WINDOW:
+        _run_strategy(symbol, all_data, all_data.index[-1])
 
 
 def main():
     global output_file
 
-    parser = argparse.ArgumentParser(description="Live paper trading with Kraken WebSocket")
+    parser = argparse.ArgumentParser(description="Live paper trading with Kraken REST API polling")
     parser.add_argument("--pairs", nargs="+", default=DEFAULT_PAIRS,
                         help="Trading pairs (e.g. ETH/BTC BTC/USD)")
     parser.add_argument("--timeframe", default=DEFAULT_TIMEFRAME)
@@ -647,35 +557,28 @@ def main():
     for symbol in args.pairs:
         _download_history_for_pair(symbol, args.timeframe, args.history_days)
 
-    # Build WebSocket subscription URL
-    pairs_str = ",".join([_symbol_to_kraken(p) for p in args.pairs])
-    ws_url = "wss://ws.kraken.com"
-
-    # Load historical data into df_cache so the strategy can run immediately
-    print("\nLoading historical data into memory...")
+    # Load combined data into memory
+    print("\nLoading combined data into memory...")
     for symbol in args.pairs:
         safe_symbol = symbol.replace("/", "_")
-        csv_path = os.path.join(LIVE_DATA_DIR, f"{safe_symbol}_live_{args.timeframe}.csv")
+        csv_path = os.path.join(LIVE_DATA_DIR, f"{safe_symbol}_live_5m.csv")
         if os.path.exists(csv_path):
             df = pd.read_csv(csv_path, index_col=0, parse_dates=True)
             df_cache[symbol] = df
             print(f"  Loaded {len(df)} bars for {symbol}")
 
-    print(f"\nConnecting to Kraken WebSocket...")
+    # Initialize CCXT exchange for polling
+    exchange = ccxt.kraken({"enableRateLimit": True})
+    exchange.load_markets()
+    print(f"\nPolling Kraken REST API every 60 seconds...")
     print(f"Pairs: {args.pairs}")
-    print(f"Timeframe: {args.timeframe}")
     print(f"Output: {output_file}")
     print()
 
-    ws = websocket.WebSocketApp(
-        ws_url,
-        on_open=lambda w: _subscribe(w, pairs_str),
-        on_message=on_message,
-        on_error=on_error,
-        on_close=on_close,
-    )
-
-    ws.run_forever(ping_interval=20, ping_timeout=10)
+    while True:
+        for symbol in args.pairs:
+            _poll_and_update(symbol, exchange, "5m")
+        time.sleep(60)  # Poll every 60 seconds
 
 
 if __name__ == "__main__":
