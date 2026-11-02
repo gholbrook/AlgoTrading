@@ -151,8 +151,6 @@ def build_candlestick_chart(
         if entry_times:
             entry_x = df.index[entry_times]
             entry_y = df.iloc[entry_times]["low"].values.copy().astype(float)
-            # Place entries slightly below the low for visibility
-            entry_y = [max(0, y - (y * 0.002)) for y in entry_y]
 
             fig.add_trace(go.Scatter(
                 x=entry_x,
@@ -167,8 +165,6 @@ def build_candlestick_chart(
         if exit_times:
             exit_x = df.index[exit_times]
             exit_y = df.iloc[exit_times]["high"].values.copy().astype(float)
-            # Place exits slightly above the high for visibility
-            exit_y = [y + (y * 0.002) for y in exit_y]
 
             fig.add_trace(go.Scatter(
                 x=exit_x,
