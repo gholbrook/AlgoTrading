@@ -60,6 +60,17 @@ def build_candlestick_chart(
     #         yaxis="y2",
     #     ))
 
+    # -- Moving Average (200-period SMA) --
+    if len(df) >= 200:
+        sma = df["close"].rolling(window=200).mean()
+        fig.add_trace(go.Scatter(
+            x=df.index,
+            y=sma,
+            mode="lines",
+            name="SMA (200)",
+            line=dict(color="#f59e0b", width=1.5),
+        ))
+
     # -- Trade markers --
     if show_trades and trades:
         entry_times = []
