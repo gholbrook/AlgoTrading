@@ -72,6 +72,33 @@ def build_candlestick_chart(
             line=dict(color="#f59e0b", width=1.5),
         ))
 
+    # -- Bollinger Bands (window=20, alpha=2) --
+    if len(df) >= 20:
+        bb_middle = df["close"].rolling(window=20).mean()
+        bb_std = df["close"].rolling(window=20).std()
+        bb_upper = bb_middle + 2 * bb_std
+        bb_lower = bb_middle - 2 * bb_std
+
+        # Upper band fill
+        fig.add_trace(go.Scatter(
+            x=df.index,
+            y=bb_upper.dropna().values,
+            mode="lines",
+            line=dict(color="rgba(100,149,237,0.6)", width=1),
+            name="BB Upper",
+            hoverinfo="skip",
+        ))
+
+        # Lower band fill (drawn underneath upper)
+        fig.add_trace(go.Scatter(
+            x=df.index,
+            y=bb_lower.dropna().values,
+            mode="lines",
+            line=dict(color="rgba(100,149,237,0.6)", width=1),
+            name="BB Lower",
+            hoverinfo="skip",
+        ))
+
     # -- Trade markers --
     if show_trades and trades:
         entry_times = []
