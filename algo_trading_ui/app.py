@@ -156,7 +156,52 @@ def _load_backtest_from_disk() -> None:
 
     # Patch the DataStore to serve these trades
     data_store._manual_trades = {result["symbol"]: trades_store}
-    print(f"  Loaded {len(enriched_trades)} trades for {result['symbol']}")
+    print(f"  Loaded {len(enriched_trades)} backtest trades for {result['symbol']}")
+
+
+def _load_live_trades() -> None:
+    """Auto-load live paper trading results from JSON file if present."""
+    import os as _os
+
+    script_dir = _os.path.dirname(_os.path.abspath(__file__))
+    parent_dir = _os.path.dirname(script_dir)
+    json_path = _os.path.join(parent_dir, "live_trades.json")
+
+    if not _os.path.exists(json_path):
+        return
+
+    print(f"Loading live trades from {json_path}...")
+    with open(json_path, "r") as f:
+        result = json.load(f)
+
+    symbol = result.get("symbol", "")
+    if not symbol:
+        return
+
+    # Live trades already have entry_time/exit_time — no enrichment needed
+    trades_data = result.get("trades", [])
+
+    class _TradesStore:
+        def __init__(self, trades_data, summary_data):
+            self._trades = trades_data
+            self._summary = summary_data
+
+        @property
+        def records(self):
+            if not self._trades:
+                return pd.DataFrame()
+            return pd.DataFrame(self._trades)
+
+        def count(self):
+            return len(self._trades)
+
+    trades_store = _TradesStore(trades_data, result.get("summary", {}))
+
+    # Store live trades under a special key so the UI can distinguish them
+    if not hasattr(data_store, "_live_trades"):
+        data_store._live_trades = {}
+    data_store._live_trades[symbol] = trades_store
+    print(f"  Loaded {len(trades_data)} live trades for {symbol}")
 
 
 def _load_csv_assets() -> None:
@@ -617,11 +662,17 @@ async def api_chart(symbol: str = Query(..., description="Asset pair symbol (e.g
     trades = None
     summary = None
 
-    # Check for manually loaded trades (from JSON file) first
+    # Check for manually loaded backtest trades (from JSON file) first
     if hasattr(data_store, "_manual_trades") and symbol in data_store._manual_trades:
         manual = data_store._manual_trades[symbol]
         trades = manual._trades
         summary = manual._summary
+
+    # Check live paper trades
+    if trades is None and hasattr(data_store, "_live_trades") and symbol in data_store._live_trades:
+        live = data_store._live_trades[symbol]
+        trades = live._trades
+        summary = live._summary
 
     portfolio = data_store.get_portfolio(symbol)
     if portfolio is not None:
@@ -654,18 +705,25 @@ async def api_backtest_info(symbol: str = Query(..., description="Asset pair sym
 
 @app.get("/api/trades")
 async def api_trades_list(symbol: str = Query(..., description="Asset pair symbol")):
-    """Return the full list of trades for *symbol*."""
-    # Check manually loaded trades first (from JSON)
+    """Return the full list of trades for *symbol* (backtest or live)."""
+    # Check manually loaded backtest trades first (from JSON)
     if hasattr(data_store, "_manual_trades") and symbol in data_store._manual_trades:
         manual = data_store._manual_trades[symbol]
         trades_data = manual._trades
         if isinstance(trades_data, list):
             return {"symbol": symbol, "trades": trades_data}
-        raise HTTPException(status_code=404, detail=f"No trades found for '{symbol}'")
 
+    # Check live paper trades
+    if hasattr(data_store, "_live_trades") and symbol in data_store._live_trades:
+        live = data_store._live_trades[symbol]
+        trades_data = live._trades
+        if isinstance(trades_data, list):
+            return {"symbol": symbol, "trades": trades_data}
+
+    # Fall back to registered portfolio
     portfolio = data_store.get_portfolio(symbol)
     if portfolio is None:
-        raise HTTPException(status_code=404, detail=f"No backtest registered for '{symbol}'")
+        raise HTTPException(status_code=404, detail=f"No trades found for '{symbol}'")
 
     trades = DataStore.extract_trades(portfolio)
     return {"symbol": symbol, "trades": [t.model_dump() for t in trades]}
@@ -702,3 +760,6 @@ if not _load_backtest_from_disk_called:
 
 # Auto-load CSV data files from data/ directory
 _load_csv_assets()
+
+# Auto-load live paper trades
+_load_live_trades()
