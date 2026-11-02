@@ -136,7 +136,7 @@ def build_candlestick_chart(
     # Entry markers trace (trace index 4 — always present)
     fig.add_trace(go.Scatter(
         x=[df.index[i] for i in entry_x] if entry_x else [],
-        y=[df.iloc[i]["low"] for i in entry_x] if entry_y else [],
+        y=[df.iloc[i]["low"] for i in entry_x] if entry_x else [],
         mode="markers",
         name="Long Entry",
         marker=dict(symbol="arrow-up", size=10, color="#26a69a", line_width=1),
@@ -146,7 +146,7 @@ def build_candlestick_chart(
     # Exit markers trace (trace index 5 — always present)
     fig.add_trace(go.Scatter(
         x=[df.index[i] for i in exit_x] if exit_x else [],
-        y=[df.iloc[i]["high"] for i in exit_y] if exit_y else [],
+        y=[df.iloc[i]["high"] for i in exit_x] if exit_x else [],
         mode="markers",
         name="Exit",
         marker=dict(symbol="arrow-down", size=10, color="#ef5350", line_width=1),
