@@ -63,9 +63,10 @@ def build_candlestick_chart(
     # -- Moving Average (200-period SMA) --
     if len(df) >= 200:
         sma = df["close"].rolling(window=200).mean()
+        valid = sma.dropna()
         fig.add_trace(go.Scatter(
-            x=df.index,
-            y=sma,
+            x=valid.index,
+            y=valid.values,
             mode="lines",
             name="SMA (200)",
             line=dict(color="#f59e0b", width=1.5),
