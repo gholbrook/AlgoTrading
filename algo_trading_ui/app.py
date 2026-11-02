@@ -335,7 +335,7 @@ def _load_csv_assets() -> None:
     # Also load live CSVs from data/live/ (these will be extended in real-time)
     live_dir = _os.path.join(parent_dir, "data", "live")
     if _os.path.isdir(live_dir):
-        live_files = sorted([f for f in _os.listdir(live_dir) if f.endswith(".csv") and "_live_" in f])
+        live_files = sorted([f for f in _os.listdir(live_dir) if f.endswith("_live_5m.csv")])
         if live_files:
             print(f"Found {len(live_files)} live CSV file(s) in data/live/: {', '.join(live_files)}")
 
@@ -386,13 +386,7 @@ def _reload_live_csv(symbol: str) -> None:
         return
 
     safe_symbol = symbol.replace("/", "_")
-    # Try both naming conventions (5m and 5min)
-    csv_path = None
-    for suffix in ("_live_5m.csv", "_live_5min.csv"):
-        candidate = _os.path.join(live_dir, f"{safe_symbol}{suffix}")
-        if _os.path.exists(candidate):
-            csv_path = candidate
-            break
+    csv_path = _os.path.join(live_dir, f"{safe_symbol}_live_5m.csv")
 
     if not csv_path:
         return

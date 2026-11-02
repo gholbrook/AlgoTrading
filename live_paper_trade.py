@@ -228,7 +228,8 @@ def _download_history_for_pair(symbol: str, timeframe: str = "5m",
     Returns the path to the saved file, or None on failure.
     """
     safe_symbol = symbol.replace("/", "_")
-    csv_path = os.path.join(save_dir, f"{safe_symbol}_live_{timeframe}.csv")
+    # Always use 5m suffix for consistency
+    csv_path = os.path.join(save_dir, f"{safe_symbol}_live_5m.csv")
 
     # Load any existing live data first (newer candles)
     existing_live = pd.DataFrame()
@@ -238,6 +239,18 @@ def _download_history_for_pair(symbol: str, timeframe: str = "5m",
             print(f"  Found {len(existing_live)} existing live bars for {symbol}")
         except Exception:
             pass
+
+    # Also check for old _live_5min.csv files and load them as fallback
+    if existing_live.empty:
+        old_path = os.path.join(save_dir, f"{safe_symbol}_live_5min.csv")
+        if os.path.exists(old_path):
+            try:
+                existing_live = pd.read_csv(old_path, index_col=0, parse_dates=True)
+                print(f"  Found {len(existing_live)} bars in old _live_5min.csv for {symbol}")
+                # Copy to new filename
+                existing_live.to_csv(csv_path)
+            except Exception:
+                pass
 
     # Determine which exchange to use (Kraken is the same one we stream from)
     fallback = ["kraken", "okx", "bitfinex", "coinbase", "gate"]
@@ -316,7 +329,7 @@ def _fetch_ohlcv(symbol: str, exchange_name: str, timeframe: str,
 
     df = pd.DataFrame(all_rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-    df.set_index("timestamp", inplace=True)
+    df = df.set_index("timestamp")
     return df
 
 
@@ -487,7 +500,7 @@ def _fetch_latest_candles(symbol: str, exchange: ccxt.kraken, timeframe: str = "
             return pd.DataFrame()
         df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "volume"])
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
-        df.set_index("timestamp", inplace=False)
+        df.set_index("timestamp", inplace=True, drop=True)
         return df
     except Exception as e:
         print(f"  [FETCH] Error fetching {symbol}: {e}")
@@ -508,13 +521,36 @@ def _poll_and_update(symbol: str, exchange: ccxt.kraken, timeframe: str = "5m"):
     if os.path.exists(csv_path):
         try:
             existing = pd.read_csv(csv_path, index_col=0, parse_dates=True)
-        except Exception:
-            pass
+            if not existing.empty:
+                # Ensure consistent timezone-aware UTC index
+                if existing.index.tzinfo is None:
+                    existing.index = existing.index.tz_localize("UTC")
+        except Exception as e:
+            print(f"  [LOAD] Error reading {csv_path}: {e}")
+            return
 
-    # Combine and deduplicate
-    all_data = pd.concat([existing, df_new]) if len(existing) > 0 else df_new
-    all_data = all_data[~all_data.index.duplicated(keep='last')]
-    all_data = all_data.sort_index()
+    if existing.empty and df_new.empty:
+        return
+
+    # Combine and deduplicate — ensure both have consistent index types
+    try:
+        if not existing.empty and not df_new.empty:
+            all_data = pd.concat([existing, df_new])
+        elif not existing.empty:
+            all_data = existing
+        else:
+            all_data = df_new
+
+        # Deduplicate by timestamp (keep last), sort
+        all_data = all_data[~all_data.index.duplicated(keep='last')]
+        all_data = all_data.sort_index()
+
+        # Ensure timezone-aware UTC index
+        if all_data.index.tzinfo is None:
+            all_data.index = all_data.index.tz_localize("UTC")
+    except Exception as e:
+        print(f"  [MERGE] Error merging data for {symbol}: {e}")
+        return
 
     # Save updated CSV
     os.makedirs(LIVE_DATA_DIR, exist_ok=True)
