@@ -30,6 +30,13 @@ def build_candlestick_chart(
     -------
     go.Figure
         A fully-configured Plotly figure with zoom/pan enabled.
+        Trace indices (stable across calls):
+          0: candlestick
+          1: SMA (if present)
+          2: BB upper
+          3: BB lower
+          4: entry markers (always present, may be empty)
+          5: exit markers (always present, may be empty)
     """
     fig = go.Figure()
 
@@ -46,19 +53,6 @@ def build_candlestick_chart(
         increasing_fillcolor="#26a69a",
         decreasing_fillcolor="#ef5350",
     ))
-
-    # -- Volume bars (if present) --
-    # if "volume" in df.columns:
-    #     colors = ["#26a69a" if c >= o else "#ef5350"
-    #               for o, c in zip(df["open"], df["close"])]
-    #     fig.add_trace(go.Bar(
-    #         x=df.index,
-    #         y=df["volume"],
-    #         name="Volume",
-    #         marker_color=colors,
-    #         opacity=0.3,
-    #         yaxis="y2",
-    #     ))
 
     # -- Moving Average (200-period SMA) --
     if len(df) >= 200:
@@ -79,7 +73,6 @@ def build_candlestick_chart(
         bb_upper = bb_middle + 2 * bb_std
         bb_lower = bb_middle - 2 * bb_std
 
-        # Upper band fill
         fig.add_trace(go.Scatter(
             x=df.index,
             y=bb_upper.dropna().values,
@@ -89,7 +82,6 @@ def build_candlestick_chart(
             hoverinfo="skip",
         ))
 
-        # Lower band fill (drawn underneath upper)
         fig.add_trace(go.Scatter(
             x=df.index,
             y=bb_lower.dropna().values,
@@ -99,26 +91,21 @@ def build_candlestick_chart(
             hoverinfo="skip",
         ))
 
-    # -- Trade markers --
-    if show_trades and trades:
-        entry_times = []
-        exit_times = []
-        entry_prices = []
-        exit_prices = []
+    # -- Trade markers (always added for stable trace indices) --
+    entry_x, entry_y = [], []
+    exit_x, exit_y = [], []
 
+    if show_trades and trades:
         for t in trades:
             entry_idx = t.entry_idx if hasattr(t, 'entry_idx') else t.get('entry_idx')
             exit_idx = t.exit_idx if hasattr(t, 'exit_idx') else t.get('exit_idx')
             entry_price = t.entry_price if hasattr(t, 'entry_price') else t.get('entry_price')
             exit_price = t.exit_price if hasattr(t, 'exit_price') else t.get('exit_price')
 
-            # Try timestamp-based lookup first (for JSON-loaded trades with time data)
             entry_time = getattr(t, 'entry_time', None) or (t.get('entry_time') if isinstance(t, dict) else None)
             exit_time = getattr(t, 'exit_time', None) or (t.get('exit_time') if isinstance(t, dict) else None)
 
-            # Use timestamp matching when available and index-based as fallback
             def find_bar_index(time_str):
-                """Find the closest bar index by timestamp."""
                 if time_str:
                     try:
                         target = pd.Timestamp(time_str)
@@ -127,10 +114,9 @@ def build_candlestick_chart(
                             target = target.tz_localize(None)
                         if csv_index.tzinfo is not None:
                             csv_index = csv_index.tz_localize(None)
-                        # Use total_seconds() for correct diff calculation
                         diffs_s = np.abs((csv_index - target).total_seconds())
                         min_pos = int(np.argmin(diffs_s))
-                        if diffs_s[min_pos] < 1800:  # 30 minutes in seconds
+                        if diffs_s[min_pos] < 1800:
                             return min_pos
                     except Exception:
                         pass
@@ -140,40 +126,32 @@ def build_candlestick_chart(
             exit_pos = find_bar_index(exit_time) if exit_time else (int(exit_idx) if exit_idx is not None and exit_idx < len(df) else None)
 
             if entry_pos is not None:
-                entry_times.append(entry_pos)
-                entry_prices.append(entry_price)
+                entry_x.append(entry_pos)
+                entry_y.append(entry_price)
 
             if exit_pos is not None:
-                exit_times.append(exit_pos)
-                exit_prices.append(exit_price or 0)
+                exit_x.append(exit_pos)
+                exit_y.append(exit_price or 0)
 
-        # Entry markers (green upward triangles for longs, red downward for shorts)
-        if entry_times:
-            entry_x = df.index[entry_times]
-            entry_y = df.iloc[entry_times]["low"].values.copy().astype(float)
+    # Entry markers trace (trace index 4 — always present)
+    fig.add_trace(go.Scatter(
+        x=[df.index[i] for i in entry_x] if entry_x else [],
+        y=[df.iloc[i]["low"] for i in entry_x] if entry_y else [],
+        mode="markers",
+        name="Long Entry",
+        marker=dict(symbol="arrow-up", size=10, color="#26a69a", line_width=1),
+        hovertemplate="<b>Entry</b><br>Time: %{x}<br>Price: %{y:.8f}<extra></extra>",
+    ))
 
-            fig.add_trace(go.Scatter(
-                x=entry_x,
-                y=entry_y,
-                mode="markers",
-                name="Long Entry",
-                marker=dict(symbol="arrow-up", size=10, color="#26a69a", line_width=1),
-                hovertemplate="<b>Entry</b><br>Time: %{x}<br>Price: %{y:.8f}<extra></extra>",
-            ))
-
-        # Exit markers
-        if exit_times:
-            exit_x = df.index[exit_times]
-            exit_y = df.iloc[exit_times]["high"].values.copy().astype(float)
-
-            fig.add_trace(go.Scatter(
-                x=exit_x,
-                y=exit_y,
-                mode="markers",
-                name="Exit",
-                marker=dict(symbol="arrow-down", size=10, color="#ef5350", line_width=1),
-                hovertemplate="<b>Exit</b><br>Time: %{x}<br>Price: %{y:.8f}<extra></extra>",
-            ))
+    # Exit markers trace (trace index 5 — always present)
+    fig.add_trace(go.Scatter(
+        x=[df.index[i] for i in exit_x] if exit_x else [],
+        y=[df.iloc[i]["high"] for i in exit_y] if exit_y else [],
+        mode="markers",
+        name="Exit",
+        marker=dict(symbol="arrow-down", size=10, color="#ef5350", line_width=1),
+        hovertemplate="<b>Exit</b><br>Time: %{x}<br>Price: %{y:.8f}<extra></extra>",
+    ))
 
     # -- Layout configuration --
     fig.update_layout(

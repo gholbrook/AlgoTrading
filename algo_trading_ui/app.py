@@ -582,16 +582,18 @@ HTML_PAGE = """
                 return;
             }
 
-            // Use Plotly.react instead of newPlot to preserve zoom/pan state.
-            // react() only updates data/layout without resetting the viewport.
-            const chartEl = document.getElementById('chart');
-            Plotly.react(chartEl, data.figure.data, data.figure.layout, {
-                responsive: true,
-                displayModeBar: true,
-                modeBarButtonsToRemove: ['lasso2d', 'select2d'],
-            });
+            // Only build chart on first load. Subsequent polls update stats/trades only,
+            // leaving the chart viewport untouched (zoom/pan preserved).
+            if (!chartInitialized) {
+                Plotly.newPlot('chart', data.figure.data, data.figure.layout, {
+                    responsive: true,
+                    displayModeBar: true,
+                    modeBarButtonsToRemove: ['lasso2d', 'select2d'],
+                });
+                chartInitialized = true;
+            }
 
-            // Update stats
+            // Update stats on every poll (summary changes as live trades accumulate)
             const bar = document.getElementById('stats-bar');
             if (data.summary) {
                 const s = data.summary;
@@ -602,18 +604,35 @@ HTML_PAGE = """
                     <div class="stat-card"><div class="label">Max Drawdown</div><div class="value negative">${s.max_drawdown_pct.toFixed(2)}%</div></div>
                     ${s.sharpe_ratio !== null ? `<div class="stat-card"><div class="label">Sharpe Ratio</div><div class="value">${s.sharpe_ratio}</div></div>` : ''}
                 `;
-                // Show live badge when we have summary data (backtest or live)
                 document.getElementById('live-badge').classList.add('active');
             } else {
                 bar.innerHTML = '<div class="no-data">No backtest registered for this asset pair.</div>';
                 document.getElementById('live-badge').classList.remove('active');
             }
 
-            // Load trades list
+            // Load trades list on every poll (this updates the table below)
             loadTradesList();
 
             // Start live polling if we have data
             startLiveRefresh();
+        }
+
+        let chartInitialized = false;
+
+        async function updateTradeMarkers() {
+            const res = await fetch(`/api/trade-markers?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const chartEl = document.getElementById('chart');
+            if (!chartEl.data || !chartInitialized) return;
+
+            // Trace 4 = entry markers, Trace 5 = exit markers (stable indices from chart_builder.py)
+            Plotly.restyle(chartEl, {x: [data.entry_x], y: [data.entry_y]}, [4]);
+            Plotly.restyle(chartEl, {x: [data.exit_x], y: [data.exit_y]}, [5]);
+
+            // Hide traces if show_trades is false
+            const vis = showTrades ? true : false;
+            Plotly.restyle(chartEl, {'visible': vis}, [4, 5]);
         }
 
         async function loadTradesList() {
@@ -814,6 +833,83 @@ async def api_trades_list(symbol: str = Query(..., description="Asset pair symbo
 
     trades = DataStore.extract_trades(portfolio)
     return {"symbol": symbol, "trades": [t.model_dump() for t in trades]}
+
+
+@app.get("/api/trade-markers")
+async def api_trade_markers(symbol: str = Query(..., description="Asset pair symbol"), show_trades: bool = Query(True)):
+    """Return trade marker x/y data for chart overlay (lightweight, no full figure).
+
+    Returns {entry_x, entry_y, exit_x, exit_y} as lists of timestamps/numbers.
+    The frontend uses Plotly.restyle to update existing trace indices 4 and 5.
+    """
+    df = data_store.get_asset_df(symbol)
+    if df is None or df.empty:
+        return {"entry_x": [], "entry_y": [], "exit_x": [], "exit_y": []}
+
+    trades = None
+
+    # Check live paper trades — hot-reload from disk
+    live = _get_live_trades(symbol)
+    if live:
+        trades = live["trades"]
+
+    portfolio = data_store.get_portfolio(symbol)
+    if portfolio is not None:
+        trades = DataStore.extract_trades(portfolio)
+
+    # Check manual backtest trades
+    if trades is None and hasattr(data_store, "_manual_trades") and symbol in data_store._manual_trades:
+        manual = data_store._manual_trades[symbol]
+        trades = manual._trades
+
+    if not show_trades or not trades:
+        return {"entry_x": [], "entry_y": [], "exit_x": [], "exit_y": []}
+
+    entry_x, entry_y, exit_x, exit_y = [], [], [], []
+
+    for t in trades:
+        entry_idx = t.entry_idx if hasattr(t, 'entry_idx') else t.get('entry_idx')
+        exit_idx = t.exit_idx if hasattr(t, 'exit_idx') else t.get('exit_idx')
+        entry_price = t.entry_price if hasattr(t, 'entry_price') else t.get('entry_price')
+        exit_price = t.exit_price if hasattr(t, 'exit_price') else t.get('exit_price')
+
+        entry_time = getattr(t, 'entry_time', None) or (t.get('entry_time') if isinstance(t, dict) else None)
+        exit_time = getattr(t, 'exit_time', None) or (t.get('exit_time') if isinstance(t, dict) else None)
+
+        def find_bar_index(time_str):
+            if time_str:
+                try:
+                    target = pd.Timestamp(time_str)
+                    csv_index = df.index
+                    if target.tzinfo is not None:
+                        target = target.tz_localize(None)
+                    if csv_index.tzinfo is not None:
+                        csv_index = csv_index.tz_localize(None)
+                    diffs_s = np.abs((csv_index - target).total_seconds())
+                    min_pos = int(np.argmin(diffs_s))
+                    if diffs_s[min_pos] < 1800:
+                        return min_pos
+                except Exception:
+                    pass
+            return None
+
+        entry_pos = find_bar_index(entry_time) if entry_time else (int(entry_idx) if entry_idx is not None and entry_idx < len(df) else None)
+        exit_pos = find_bar_index(exit_time) if exit_time else (int(exit_idx) if exit_idx is not None and exit_idx < len(df) else None)
+
+        if entry_pos is not None:
+            entry_x.append(df.index[entry_pos].isoformat())
+            entry_y.append(float(df.iloc[entry_pos]["low"]))
+
+        if exit_pos is not None:
+            exit_x.append(df.index[exit_pos].isoformat())
+            exit_y.append(float(df.iloc[exit_pos]["high"]))
+
+    return {
+        "entry_x": entry_x,
+        "entry_y": entry_y,
+        "exit_x": exit_x,
+        "exit_y": exit_y,
+    }
 
 
 # ============================================================
