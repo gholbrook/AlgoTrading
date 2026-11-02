@@ -48,10 +48,10 @@ def build_candlestick_chart(
         low=df["low"],
         close=df["close"],
         name="OHLC",
-        increasing_line_color="#26a69a",
-        decreasing_line_color="#ef5350",
-        increasing_fillcolor="#26a69a",
-        decreasing_fillcolor="#ef5350",
+        increasing_line_color="#00e676",
+        decreasing_line_color="#ff1744",
+        increasing_fillcolor="#00e676",
+        decreasing_fillcolor="#ff1744",
     ))
 
     # -- Moving Average (200-period SMA) --
@@ -63,7 +63,7 @@ def build_candlestick_chart(
             y=valid.values,
             mode="lines",
             name="SMA (200)",
-            line=dict(color="#f59e0b", width=1.5),
+            line=dict(color="#ffab40", width=1.5),
         ))
 
     # -- Bollinger Bands (window=20, alpha=2) --
@@ -77,7 +77,7 @@ def build_candlestick_chart(
             x=df.index,
             y=bb_upper.dropna().values,
             mode="lines",
-            line=dict(color="rgba(100,149,237,0.6)", width=1),
+            line=dict(color="rgba(100,181,246,0.7)", width=1),
             name="BB Upper",
             hoverinfo="skip",
         ))
@@ -86,7 +86,7 @@ def build_candlestick_chart(
             x=df.index,
             y=bb_lower.dropna().values,
             mode="lines",
-            line=dict(color="rgba(100,149,237,0.6)", width=1),
+            line=dict(color="rgba(100,181,246,0.7)", width=1),
             name="BB Lower",
             hoverinfo="skip",
         ))
@@ -139,7 +139,7 @@ def build_candlestick_chart(
         y=[df.iloc[i]["low"] for i in entry_x] if entry_x else [],
         mode="markers",
         name="Long Entry",
-        marker=dict(symbol="arrow-up", size=10, color="#26a69a", line_width=1),
+        marker=dict(symbol="arrow-up", size=10, color="#00e676", line_width=1),
         hovertemplate="<b>Entry</b><br>Time: %{x}<br>Price: %{y:.8f}<extra></extra>",
     ))
 
@@ -149,7 +149,7 @@ def build_candlestick_chart(
         y=[df.iloc[i]["high"] for i in exit_x] if exit_x else [],
         mode="markers",
         name="Exit",
-        marker=dict(symbol="arrow-down", size=10, color="#ef5350", line_width=1),
+        marker=dict(symbol="arrow-down", size=10, color="#ff1744", line_width=1),
         hovertemplate="<b>Exit</b><br>Time: %{x}<br>Price: %{y:.8f}<extra></extra>",
     ))
 
@@ -157,18 +157,24 @@ def build_candlestick_chart(
     fig.update_layout(
         title=f"{symbol} — Candlestick Chart",
         title_x=0.5,
+        title_font=dict(color="#e0e0e0", size=16),
         xaxis_rangeslider_visible=False,
+        paper_bgcolor="#1a1a2e",
+        plot_bgcolor="#1a1a2e",
+        font=dict(color="#e0e0e0"),
         xaxis=dict(
             type="date",
-            gridcolor="rgba(128,128,128,0.15)",
-            zerolinecolor="rgba(128,128,128,0.3)",
+            gridcolor="rgba(255,255,255,0.08)",
+            zerolinecolor="rgba(255,255,255,0.15)",
+            tickfont=dict(size=11),
         ),
         yaxis=dict(
             title="Price",
-            gridcolor="rgba(128,128,128,0.15)",
-            zerolinecolor="rgba(128,128,128,0.3)",
+            gridcolor="rgba(255,255,255,0.08)",
+            zerolinecolor="rgba(255,255,255,0.15)",
             tickprefix="$" if symbol.startswith("$") else "",
             fixedrange=False,
+            tickfont=dict(size=11),
         ),
         yaxis2=dict(
             title="Volume",
@@ -180,10 +186,11 @@ def build_candlestick_chart(
             fixedrange=True,
             anchor="x",
             matches=None,
+            tickfont=dict(size=10),
         ),
         dragmode="zoom",
         hovermode="x unified",
-        template="plotly_white",
+        template=None,
         margin=dict(l=60, r=30, t=60, b=40),
         legend=dict(
             orientation="h",
@@ -191,9 +198,8 @@ def build_candlestick_chart(
             y=1.02,
             xanchor="center",
             x=0.5,
+            font=dict(size=11, color="#e0e0e0"),
         ),
-        paper_bgcolor="white",
-        plot_bgcolor="white",
     )
 
     return fig
