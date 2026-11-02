@@ -187,18 +187,22 @@ class PaperTrader:
     def check_entries(self, symbol: str, current_price: float,
                       current_time: pd.Timestamp, indicators: dict):
         """Check for new entry signals on this candle."""
-        if not indicators["sma_rising"].iloc[-1]:
-            # Downtrend — only short signals (fade upper BB)
-            bb_upper = indicators["bb_upper"].iloc[-1]
-            if current_price >= bb_upper:
-                self._open_position(symbol, "short", current_price,
-                                    current_time)
-        else:
-            # Uptrend — only long signals (buy lower BB dip)
-            bb_lower = indicators["bb_lower"].iloc[-1]
-            if current_price <= bb_lower:
-                self._open_position(symbol, "long", current_price,
-                                    current_time)
+        close = indicators.get("bb_mid", None)  # SMA as midpoint
+        if close is None or close.empty or len(close) < 2:
+            return
+
+        prev_close = close.iloc[-2]
+        curr_sma = close.iloc[-1]
+        
+        # SMA crossover strategy:
+        # Golden cross: SMA crosses above price → long signal
+        # Death cross: SMA crosses below price → short signal
+        if prev_close <= curr_sma and current_price > curr_sma:
+            # Price crossed above SMA — bullish
+            self._open_position(symbol, "long", current_price, current_time)
+        elif prev_close >= curr_sma and current_price < curr_sma:
+            # Price crossed below SMA — bearish
+            self._open_position(symbol, "short", current_price, current_time)
 
     def _open_position(self, symbol: str, direction: str, price: float,
                        time: pd.Timestamp):
@@ -398,10 +402,27 @@ def _run_strategy(symbol: str, df: pd.DataFrame, timestamp: pd.Timestamp):
 
     indicators = compute_indicators(df)
     current_price = df["close"].iloc[-1]
+    
+    # Debug: log indicator state every poll (suppress after first 3 polls)
+    if not hasattr(_run_strategy, '_poll_count'):
+        _run_strategy._poll_count = 0
+    _run_strategy._poll_count += 1
+    pcnt = _run_strategy._poll_count
+    sma_val = indicators["sma"].iloc[-1]
+    bb_lower = indicators["bb_lower"].iloc[-1]
+    bb_upper = indicators["bb_upper"].iloc[-1]
+    sma_rising = indicators["sma_rising"].iloc[-1]
+    if pcnt <= 3:
+        print(f"  [STRATEGY] {symbol}: Price={current_price:.6f} SMA={sma_val:.6f} BB_L={bb_lower:.6f} BB_U={bb_upper:.6f} rising={sma_rising}")
 
     # Check exits first, then entries
     paper_trader.check_exits(symbol, current_price, timestamp, indicators)
     paper_trader.check_entries(symbol, current_price, timestamp, indicators)
+    
+    if pcnt <= 3:
+        n_positions = len(paper_trader.positions.get(symbol, []))
+        n_trades = sum(1 for t in paper_trader.trades if t.symbol == symbol)
+        print(f"  [STRATEGY] {symbol}: positions={n_positions}, trades={n_trades}")
 
     # Record equity snapshot
     open_notional = sum(
@@ -424,13 +445,28 @@ def save_results():
     if paper_trader is None:
         return
 
-    # Build per-symbol trade lists
+    # Build per-symbol trade lists (completed trades)
     symbol_trades = {}
     for t in paper_trader.trades:
         sym = t.symbol
         if sym not in symbol_trades:
             symbol_trades[sym] = []
         symbol_trades[sym].append(t.to_dict())
+
+    # Also include open positions as pending trades
+    for sym, pos_list in paper_trader.positions.items():
+        if sym not in symbol_trades:
+            symbol_trades[sym] = []
+        for pos in pos_list:
+            symbol_trades[sym].append({
+                "entry_price": pos.entry_price,
+                "exit_price": None,
+                "entry_time": pos.entry_time.isoformat(),
+                "exit_time": None,
+                "pnl": None,
+                "exit_reason": "open",
+                "is_long": pos.direction == "long",
+            })
 
     # Build summary per symbol
     symbol_summary = {}
@@ -509,8 +545,10 @@ def _fetch_latest_candles(symbol: str, exchange: ccxt.kraken, timeframe: str = "
 
 def _poll_and_update(symbol: str, exchange: ccxt.kraken, timeframe: str = "5m"):
     """Poll Kraken REST for latest candles and update live CSV + strategy."""
+    print(f"[POLL] {symbol} starting...")
     df_new = _fetch_latest_candles(symbol, exchange, timeframe)
     if df_new.empty:
+        print(f"  [POLL] {symbol}: df_new empty, skipping")
         return
 
     safe_symbol = symbol.replace("/", "_")
@@ -561,7 +599,10 @@ def _poll_and_update(symbol: str, exchange: ccxt.kraken, timeframe: str = "5m"):
 
     # Run strategy on the latest candle
     if len(all_data) >= SMA_WINDOW:
+        print(f"  [STRATEGY] Running for {symbol}, bars={len(all_data)}, last_ts={all_data.index[-1]}")
         _run_strategy(symbol, all_data, all_data.index[-1])
+    else:
+        print(f"  [STRATEGY] Skipping {symbol}: {len(all_data)} < {SMA_WINDOW}")
 
 
 def main():
@@ -615,6 +656,8 @@ def main():
         for symbol in args.pairs:
             _poll_and_update(symbol, exchange, "5m")
         time.sleep(60)  # Poll every 60 seconds
+        # Save results periodically (every poll cycle)
+        save_results()
 
 
 if __name__ == "__main__":
