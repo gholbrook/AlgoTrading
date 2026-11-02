@@ -374,6 +374,8 @@ def _reload_live_csv(symbol: str) -> None:
 
     This allows the UI to pick up new candles appended by live_paper_trade.py
     without restarting the server.
+
+    Handles both filename conventions: {symbol}_live_5m.csv and {symbol}_live_5min.csv
     """
     import os as _os
 
@@ -384,9 +386,15 @@ def _reload_live_csv(symbol: str) -> None:
         return
 
     safe_symbol = symbol.replace("/", "_")
-    csv_path = _os.path.join(live_dir, f"{safe_symbol}_live_5m.csv")
+    # Try both naming conventions (5m and 5min)
+    csv_path = None
+    for suffix in ("_live_5m.csv", "_live_5min.csv"):
+        candidate = _os.path.join(live_dir, f"{safe_symbol}{suffix}")
+        if _os.path.exists(candidate):
+            csv_path = candidate
+            break
 
-    if not _os.path.exists(csv_path):
+    if not csv_path:
         return
 
     try:
