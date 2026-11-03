@@ -186,26 +186,61 @@ class PaperTrader:
 
     def check_entries(self, symbol: str, current_price: float,
                       current_time: pd.Timestamp, indicators: dict):
-        """Check for new entry signals on this candle."""
-        # Alternating buy/sell every candle (UI test strategy)
-        if len(df_cache.get(symbol, pd.DataFrame())) > 0:
-            bar_count = len(df_cache[symbol])
-            if bar_count % 2 == 0:
-                self._open_position(symbol, "long", current_price, current_time)
-            else:
-                self._open_position(symbol, "short", current_price, current_time)
+        """Check for new entry signals on this candle.
+        
+        Strategy from main.py:
+        - Long: price wick touches BB lower AND SMA is rising
+        - Short: price wick touches BB upper AND SMA is falling
+        """
+        df = df_cache.get(symbol, pd.DataFrame())
+        if len(df) < 2:
+            return
+
+        high_prices = df["high"]
+        low_prices = df["low"]
+        bb_lower = indicators["bb_lower"]
+        bb_upper = indicators["bb_upper"]
+        sma_rising = indicators["sma_rising"]
+
+        # Wick touch entry: long when low <= BB lower and SMA rising
+        wick_touch_long = low_prices.iloc[-1] <= bb_lower.iloc[-1] and sma_rising.iloc[-1]
+        # Wick touch short: high >= BB upper and SMA falling
+        wick_touch_short = high_prices.iloc[-1] >= bb_upper.iloc[-1] and not sma_rising.iloc[-1]
+
+        if wick_touch_long:
+            self._open_position(symbol, "long", current_price, current_time)
+        elif wick_touch_short:
+            self._open_position(symbol, "short", current_price, current_time)
 
     def check_exits(self, symbol: str, current_price: float,
                     current_time: pd.Timestamp, indicators: dict):
-        """Close any open position immediately (alternating strategy)."""
-        if symbol not in self.positions:
+        """Close positions on TP or SL hit.
+        
+        From main.py:
+        - Tier 1 TP: 0.45% (micro-churn to clear fees quickly)
+        - Tier 2 TP: base_band_height * 1.5 (expansion layer)
+        - Hard SL: 2.0% stop loss
+        """
+        if symbol not in self.positions or not self.positions[symbol]:
             return
 
+        remaining = []
         for pos in self.positions[symbol]:
             if pos.direction == "long":
-                pnl = (current_price - pos.entry_price) / pos.entry_price * pos.size
+                pnl_pct = (current_price - pos.entry_price) / pos.entry_price * 100
             else:
-                pnl = (pos.entry_price - current_price) / pos.entry_price * pos.size
+                pnl_pct = (pos.entry_price - current_price) / pos.entry_price * 100
+
+            # Hard stop loss at 2%
+            if abs(pnl_pct) >= 2.0:
+                exit_reason = "hard_stop"
+            # Tier 1 TP: 0.45% micro-churn
+            elif pnl_pct >= 0.45:
+                exit_reason = "tier1_tp"
+            else:
+                # Still in position — don't close yet
+                remaining.append(pos)
+                continue
 
             trade = TradeRecord(
                 symbol=symbol,
@@ -214,13 +249,13 @@ class PaperTrader:
                 exit_price=current_price,
                 entry_time=pos.entry_time,
                 exit_time=current_time,
-                pnl=pnl,
-                exit_reason="alternating",
+                pnl=pnl_pct * pos.size / 100,
+                exit_reason=exit_reason,
             )
             self.trades.append(trade)
-            self.cash += pos.size + pnl
+            self.cash += pos.size + trade.pnl
 
-        self.positions[symbol] = []
+        self.positions[symbol] = remaining
 
     def _open_position(self, symbol: str, direction: str, price: float,
                        time: pd.Timestamp):

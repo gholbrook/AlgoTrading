@@ -701,7 +701,8 @@ HTML_PAGE = """
             console.log(`[loadAsset] selected: "${currentSymbol}"`);
             if (!currentSymbol) {
                 Plotly.purge('chart');
-                document.getElementById('stats-bar').innerHTML = '';
+                const bar = document.getElementById('stats-bar');
+                if (bar) bar.innerHTML = '';
                 renderTrades([]);
                 stopLiveRefresh();
                 lastRenderedSymbol = null;
@@ -712,12 +713,14 @@ HTML_PAGE = """
 
         function startLiveRefresh() {
             stopLiveRefresh();
+            if (!currentSymbol) return;
             liveRefreshInterval = setInterval(async () => {
                 if (currentSymbol && lastRenderedSymbol === currentSymbol) {
-                    // Same symbol — update candle data, stats and markers, preserve viewport
+                    // Same symbol — update candle data, stats, markers, AND trades list
                     await refreshCandleData();
                     updateStatsFromChart();
                     updateTradeMarkers();
+                    loadTradesList();
                 }
             }, 5000); // poll every 5 seconds
         }
@@ -784,7 +787,8 @@ HTML_PAGE = """
 
             if (data.error) {
                 Plotly.purge('chart');
-                document.getElementById('stats-bar').innerHTML = '';
+                const bar = document.getElementById('stats-bar');
+                if (bar) bar.innerHTML = '';
                 renderTrades([]);
                 lastRenderedSymbol = null;
                 return;
@@ -827,12 +831,15 @@ HTML_PAGE = """
                 bar.classList.remove('hidden');
                 chartEl.style.height = '75vh';
                 const s = summary;
+                const totalReturn = s.total_return_pct != null ? s.total_return_pct.toFixed(2) : '—';
+                const winRate = s.win_rate != null ? s.win_rate : '—';
+                const maxDD = s.max_drawdown_pct != null ? s.max_drawdown_pct.toFixed(2) : '—';
                 bar.innerHTML = `
-                    <div class="stat-card"><div class="label">Total Trades</div><div class="value">${s.total_trades}</div></div>
-                    <div class="stat-card"><div class="label">Win Rate</div><div class="value">${s.win_rate}%</div></div>
-                    <div class="stat-card"><div class="label">Total Return</div><div class="value ${s.total_return_pct >= 0 ? 'positive' : 'negative'}">${s.total_return_pct.toFixed(2)}%</div></div>
-                    <div class="stat-card"><div class="label">Max Drawdown</div><div class="value negative">${s.max_drawdown_pct.toFixed(2)}%</div></div>
-                    ${s.sharpe_ratio !== null ? `<div class="stat-card"><div class="label">Sharpe Ratio</div><div class="value">${s.sharpe_ratio}</div></div>` : ''}
+                    <div class="stat-card"><div class="label">Total Trades</div><div class="value">${s.total_trades ?? '—'}</div></div>
+                    <div class="stat-card"><div class="label">Win Rate</div><div class="value">${winRate}%</div></div>
+                    <div class="stat-card"><div class="label">Total Return</div><div class="value ${parseFloat(totalReturn) >= 0 ? 'positive' : 'negative'}">${totalReturn}%</div></div>
+                    <div class="stat-card"><div class="label">Max Drawdown</div><div class="value negative">${maxDD}%</div></div>
+                    ${s.sharpe_ratio !== null && s.sharpe_ratio !== undefined ? `<div class="stat-card"><div class="label">Sharpe Ratio</div><div class="value">${s.sharpe_ratio}</div></div>` : ''}
                 `;
                 // Only show LIVE badge when in live mode with actual live data
                 if (is_live) {
@@ -892,6 +899,7 @@ HTML_PAGE = """
         }
 
         function renderTrades(trades) {
+            console.log(`[RENDER] symbol="${currentSymbol}" trades.length=${trades.length}`);
             if (!currentSymbol || trades.length === 0) {
                 const body = document.getElementById('trade-body');
                 const countEl = document.getElementById('trades-count');
@@ -907,6 +915,7 @@ HTML_PAGE = """
             const body = document.getElementById('trade-body');
             const countEl = document.getElementById('trades-count');
             const titleEl = document.getElementById('trades-title');
+            if (!body || !countEl || !titleEl) return;
             
             console.log(`[renderTrades] symbol=${currentSymbol}, trades.length=${trades.length}`);
 
@@ -976,11 +985,8 @@ HTML_PAGE = """
 @app.get("/", response_class=HTMLResponse)
 async def index():
     """Serve the main dashboard page."""
-    return HTMLPage()
-
-
-def HTMLPage():
-    return HTML_PAGE
+    from fastapi.responses import HTMLResponse as _HTMLResponse
+    return _HTMLResponse(content=HTML_PAGE, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 @app.get("/api/assets")
