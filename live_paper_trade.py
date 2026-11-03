@@ -38,8 +38,8 @@ LIVE_DATA_DIR = "data/live"
 SMA_WINDOW = 200
 BB_WINDOW = 20
 BB_ALPHA = 2.0
-TP_TIER_1 = 0.0045       # 0.45% micro-churn
-SL_STOP = 0.020          # 2% hard stop
+TP_TIER_1 = 0.0005       # 0.05% micro-churn for quick exits
+SL_STOP = 0.005          # 0.5% hard stop (tighter for testing)
 INITIAL_CASH = 50000.0
 FEES = 0.0020            # Kraken Tier 4 Maker
 SIZE_PCT = 0.02          # 2% per position
@@ -187,22 +187,13 @@ class PaperTrader:
     def check_entries(self, symbol: str, current_price: float,
                       current_time: pd.Timestamp, indicators: dict):
         """Check for new entry signals on this candle."""
-        close = indicators.get("bb_mid", None)  # SMA as midpoint
-        if close is None or close.empty or len(close) < 2:
-            return
-
-        prev_close = close.iloc[-2]
-        curr_sma = close.iloc[-1]
-        
-        # SMA crossover strategy:
-        # Golden cross: SMA crosses above price → long signal
-        # Death cross: SMA crosses below price → short signal
-        if prev_close <= curr_sma and current_price > curr_sma:
-            # Price crossed above SMA — bullish
-            self._open_position(symbol, "long", current_price, current_time)
-        elif prev_close >= curr_sma and current_price < curr_sma:
-            # Price crossed below SMA — bearish
-            self._open_position(symbol, "short", current_price, current_time)
+        # Alternating buy/sell every candle (UI test strategy)
+        if len(df_cache.get(symbol, pd.DataFrame())) > 0:
+            bar_count = len(df_cache[symbol])
+            if bar_count % 2 == 0:
+                self._open_position(symbol, "long", current_price, current_time)
+            else:
+                self._open_position(symbol, "short", current_price, current_time)
 
     def _open_position(self, symbol: str, direction: str, price: float,
                        time: pd.Timestamp):
