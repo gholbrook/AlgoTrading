@@ -698,6 +698,7 @@ HTML_PAGE = """
         async function loadAsset() {
             const sel = document.getElementById('asset-select');
             currentSymbol = sel.value;
+            console.log(`[loadAsset] selected: "${currentSymbol}"`);
             if (!currentSymbol) {
                 Plotly.purge('chart');
                 document.getElementById('stats-bar').innerHTML = '';
@@ -775,6 +776,7 @@ HTML_PAGE = """
         }
 
         async function refreshChart() {
+            console.log(`[refreshChart] symbol=${currentSymbol}, source=${currentSource}`);
             const params = new URLSearchParams({ symbol: currentSymbol, show_trades: showTrades, source: currentSource });
             const res = await fetch(`/api/chart?${params}`);
             if (!res.ok) return;
@@ -845,6 +847,7 @@ HTML_PAGE = """
         }
 
         function updateStatsFromChart() {
+            if (!currentSymbol) return;
             // On live poll, re-fetch just the summary to update stats without touching chart
             fetch(`/api/chart?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}&source=${currentSource}`)
                 .then(r => r.json())
@@ -852,6 +855,7 @@ HTML_PAGE = """
         }
 
         async function updateTradeMarkers() {
+            if (!currentSymbol) return;
             const res = await fetch(`/api/trade-markers?symbol=${encodeURIComponent(currentSymbol)}&show_trades=${showTrades}&source=${currentSource}`);
             if (!res.ok) return;
             const data = await res.json();
@@ -868,16 +872,20 @@ HTML_PAGE = """
         }
 
         async function loadTradesList() {
+            if (!currentSymbol) return;
             try {
                 const res = await fetch(`/api/trades?symbol=${encodeURIComponent(currentSymbol)}&source=${currentSource}`);
                 if (!res.ok) {
+                    console.log(`[trades] ${currentSource} returned ${res.status}, clearing`);
                     renderTrades([]);
                     return;
                 }
                 const data = await res.json();
                 tradeData = (data.trades || []).map((t, i) => ({ idx: i + 1, ...t }));
+                console.log(`[trades] ${currentSource} loaded ${tradeData.length} trades for ${currentSymbol}`);
                 renderTrades(tradeData);
-            } catch {
+            } catch (e) {
+                console.error('[trades] Error:', e);
                 renderTrades([]);
             }
         }
@@ -886,6 +894,8 @@ HTML_PAGE = """
             const body = document.getElementById('trade-body');
             const countEl = document.getElementById('trades-count');
             const titleEl = document.getElementById('trades-title');
+            
+            console.log(`[renderTrades] symbol=${currentSymbol}, trades.length=${trades.length}`);
 
             if (!currentSymbol || trades.length === 0) {
                 body.innerHTML = '<tr><td colspan="7" class="trade-empty">No trades to display.</td></tr>';
