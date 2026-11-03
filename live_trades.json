@@ -1,161 +1,24 @@
 {
   "symbols": [
-    "SOL/USDT",
     "BTC/USD",
-    "ETH/BTC"
+    "ETH/BTC",
+    "SOL/USDT"
   ],
   "trades": {
-    "SOL/USDT": [
-      {
-        "entry_price": 92.06,
-        "exit_price": 92.5,
-        "entry_time": "2026-11-03T00:10:00+00:00",
-        "exit_time": "2026-11-03T00:30:00+00:00",
-        "pnl": 4.7795,
-        "exit_reason": "tp_tier_1",
-        "is_long": true
-      },
-      {
-        "entry_price": 92.3,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:15:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 92.38,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:20:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 92.44,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:25:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 92.51,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:30:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 92.55,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:35:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 92.6,
-        "exit_price": null,
-        "entry_time": "2026-11-03T01:15:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 92.19,
-        "exit_price": null,
-        "entry_time": "2026-11-03T04:10:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": false
-      }
-    ],
     "BTC/USD": [
       {
-        "entry_price": 76668.1,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:10:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": false
-      },
-      {
-        "entry_price": 76843.0,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:15:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
+        "entry_price": 76758.2,
+        "exit_price": 76734.9,
+        "entry_time": "2026-11-03T04:15:00+00:00",
+        "exit_time": "2026-11-03T04:20:00+00:00",
+        "pnl": -0.3036,
+        "exit_reason": "alternating",
         "is_long": true
       },
       {
-        "entry_price": 76896.3,
+        "entry_price": 76753.9,
         "exit_price": null,
-        "entry_time": "2026-11-03T00:20:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 76912.1,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:25:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 77001.0,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:30:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 77100.0,
-        "exit_price": null,
-        "entry_time": "2026-11-03T00:35:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 77132.2,
-        "exit_price": null,
-        "entry_time": "2026-11-03T01:15:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 77155.9,
-        "exit_price": null,
-        "entry_time": "2026-11-03T01:20:00+00:00",
-        "exit_time": null,
-        "pnl": null,
-        "exit_reason": "open",
-        "is_long": true
-      },
-      {
-        "entry_price": 76771.1,
-        "exit_price": null,
-        "entry_time": "2026-11-03T04:10:00+00:00",
+        "entry_time": "2026-11-03T04:20:00+00:00",
         "exit_time": null,
         "pnl": null,
         "exit_reason": "open",
@@ -164,18 +27,38 @@
     ],
     "ETH/BTC": [
       {
-        "entry_price": 0.029284,
+        "entry_price": 0.029294,
+        "exit_price": 0.029294,
+        "entry_time": "2026-11-03T04:15:00+00:00",
+        "exit_time": "2026-11-03T04:20:00+00:00",
+        "pnl": 0.0,
+        "exit_reason": "alternating",
+        "is_long": true
+      },
+      {
+        "entry_price": 0.029294,
         "exit_price": null,
-        "entry_time": "2026-11-03T00:35:00+00:00",
+        "entry_time": "2026-11-03T04:20:00+00:00",
         "exit_time": null,
         "pnl": null,
         "exit_reason": "open",
         "is_long": false
+      }
+    ],
+    "SOL/USDT": [
+      {
+        "entry_price": 92.23,
+        "exit_price": 92.26,
+        "entry_time": "2026-11-03T04:15:00+00:00",
+        "exit_time": "2026-11-03T04:20:00+00:00",
+        "pnl": 0.3253,
+        "exit_reason": "alternating",
+        "is_long": true
       },
       {
-        "entry_price": 0.029285,
+        "entry_price": 92.27,
         "exit_price": null,
-        "entry_time": "2026-11-03T04:10:00+00:00",
+        "entry_time": "2026-11-03T04:20:00+00:00",
         "exit_time": null,
         "pnl": null,
         "exit_reason": "open",
@@ -184,23 +67,23 @@
     ]
   },
   "summary": {
-    "SOL/USDT": {
-      "total_trades": 27,
-      "winning_trades": 6,
-      "losing_trades": 0,
-      "total_pnl": 27.9127
-    },
     "BTC/USD": {
-      "total_trades": 30,
-      "winning_trades": 5,
-      "losing_trades": 0,
-      "total_pnl": 23.3541
+      "total_trades": 2,
+      "winning_trades": 0,
+      "losing_trades": 1,
+      "total_pnl": -0.0847
     },
     "ETH/BTC": {
-      "total_trades": 4,
+      "total_trades": 2,
       "winning_trades": 0,
-      "losing_trades": 0,
+      "losing_trades": 1,
       "total_pnl": 0
+    },
+    "SOL/USDT": {
+      "total_trades": 2,
+      "winning_trades": 0,
+      "losing_trades": 1,
+      "total_pnl": -0.8678
     }
   },
   "start_dates": {
@@ -208,5 +91,5 @@
     "ETH/BTC": "2026-10-31 10:50:00+00:00",
     "SOL/USDT": "2026-10-31 10:50:00+00:00"
   },
-  "end_date": "2026-11-03T04:15:29.520761+00:00"
+  "end_date": "2026-11-03T04:24:45.619556+00:00"
 }

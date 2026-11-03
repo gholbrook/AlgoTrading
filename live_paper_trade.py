@@ -195,6 +195,33 @@ class PaperTrader:
             else:
                 self._open_position(symbol, "short", current_price, current_time)
 
+    def check_exits(self, symbol: str, current_price: float,
+                    current_time: pd.Timestamp, indicators: dict):
+        """Close any open position immediately (alternating strategy)."""
+        if symbol not in self.positions:
+            return
+
+        for pos in self.positions[symbol]:
+            if pos.direction == "long":
+                pnl = (current_price - pos.entry_price) / pos.entry_price * pos.size
+            else:
+                pnl = (pos.entry_price - current_price) / pos.entry_price * pos.size
+
+            trade = TradeRecord(
+                symbol=symbol,
+                direction=pos.direction,
+                entry_price=pos.entry_price,
+                exit_price=current_price,
+                entry_time=pos.entry_time,
+                exit_time=current_time,
+                pnl=pnl,
+                exit_reason="alternating",
+            )
+            self.trades.append(trade)
+            self.cash += pos.size + pnl
+
+        self.positions[symbol] = []
+
     def _open_position(self, symbol: str, direction: str, price: float,
                        time: pd.Timestamp):
         """Open a new paper position."""
