@@ -822,6 +822,7 @@ HTML_PAGE = """
         function updateStats(summary, is_live = false) {
             const bar = document.getElementById('stats-bar');
             const chartEl = document.getElementById('chart');
+            if (!bar || !chartEl) return;
             if (summary) {
                 bar.classList.remove('hidden');
                 chartEl.style.height = '75vh';
@@ -891,21 +892,24 @@ HTML_PAGE = """
         }
 
         function renderTrades(trades) {
+            if (!currentSymbol || trades.length === 0) {
+                const body = document.getElementById('trade-body');
+                const countEl = document.getElementById('trades-count');
+                const titleEl = document.getElementById('trades-title');
+                if (body) body.innerHTML = '<tr><td colspan="7" class="trade-empty">No trades to display.</td></tr>';
+                if (countEl) countEl.textContent = '';
+                if (titleEl) titleEl.textContent = 'Trades';
+                const section = document.querySelector('.trades-section');
+                if (section) section.style.display = 'none';
+                return;
+            }
+
             const body = document.getElementById('trade-body');
             const countEl = document.getElementById('trades-count');
             const titleEl = document.getElementById('trades-title');
             
             console.log(`[renderTrades] symbol=${currentSymbol}, trades.length=${trades.length}`);
 
-            if (!currentSymbol || trades.length === 0) {
-                body.innerHTML = '<tr><td colspan="7" class="trade-empty">No trades to display.</td></tr>';
-                countEl.textContent = '';
-                titleEl.textContent = 'Trades';
-                document.querySelector('.trades-section').style.display = 'none';
-                return;
-            }
-
-            const symbol = currentSymbol;
             document.querySelector('.trades-section').style.display = '';
             countEl.textContent = `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
             titleEl.textContent = `Trades — ${symbol}`;
