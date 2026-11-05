@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#f3f1eb" />
+    <script>
+      if (localStorage.getItem("gridline.theme") === "light") document.documentElement.dataset.theme = "light";
+    </script>
+    <title>Gridline — Research & paper monitor</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="stylesheet" href="/static/inspect.css" />
+    <script src="/static/inspect.js" defer></script>
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="Gridline home"
+          ><span class="brand-mark">G<span></span></span><span>gridline</span></a
+        >
+        <div class="top-context">
+          <span class="context-dot"></span><span>LOCAL RESEARCH DESK</span
+          ><span class="context-divider"></span><span id="connection-label">Connecting…</span>
+        </div>
+        <div class="top-actions">
+        <button class="theme-button" id="theme-switch" type="button" aria-pressed="true">Dark theme</button>
+        <button class="icon-button" id="refresh-button" title="Refresh data" aria-label="Refresh data">
+          ↻
+        </button>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="intro-row">
+          <div>
+            <p class="eyebrow">ASYMMETRIC GRID <span>·</span> RESEARCH DESK</p>
+            <h1>Strategy <em>workbench.</em></h1>
+          </div>
+          <p class="intro-note">
+            Replay local market history, inspect each layer, or rehearse a paper strategy one candle at a
+            time.
+          </p>
+        </section>
+
+        <nav class="mode-tabs" aria-label="Workspace mode">
+          <button class="mode-tab active" data-mode="research">
+            <span class="tab-index">01</span> Research <span class="tab-sub">historical replay</span>
+          </button>
+          <button class="mode-tab" data-mode="paper">
+            <span class="tab-index">02</span> Paper <span class="tab-sub">live monitor</span>
+          </button>
+          <button class="mode-tab" id="open-studio" type="button"><span class="tab-index">03</span> Strategies <span class="tab-sub">rules &amp; settings</span></button>
+          <a class="mode-tab" href="/manual"><span class="tab-index">04</span> Manual <span class="tab-sub">click &amp; replay</span></a>
+          <span class="tabs-rule"></span><a class="jump-link" href="#setup">Setup</a
+          ><a class="jump-link" href="#archive">Archive</a>
+        </nav>
+
+        <section class="workspace">
+          <aside class="sidebar" id="setup">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">SETUP</p>
+                <h2 id="setup-title">Research a strategy</h2>
+              </div>
+              <span class="step-number">A</span>
+            </div>
+            <p class="panel-copy" id="setup-copy">
+              Choose a local dataset and define your grid parameters.
+            </p>
+
+            <form id="download-form"></form>
+            <form id="bulk-form"></form>
+            <form id="run-form">
+              <section class="strategy-picker">
+                <p class="eyebrow">STRATEGY</p>
+                <label for="strategy-list">Run with</label>
+                <select id="strategy-list"><option value="">Built-in · Bollinger wick grid</option></select>
+                <p id="strategy-summary" class="dataset-meta">Built-in settings. Choose a saved version or edit this draft in Strategies.</p>
+                <button type="button" class="text-button" id="edit-strategy">Edit strategy</button>
+              </section>
+              <div class="field-group paper-only" id="feed-group" hidden>
+                <label for="feed-choice">PAPER FEED</label>
+                <select id="feed-choice">
+                  <option value="recorded">Recorded candles · rehearsal</option>
+                  <option value="live" selected>Kraken live</option>
+                </select>
+                <div class="dataset-meta" id="feed-note">
+                  Each session uses a separate simulated account.
+                </div>
+              </div>
+              <div class="field-group" id="dataset-group">
+                <label for="dataset-quote">QUOTE ASSET</label>
+                <select id="dataset-quote" aria-label="Dataset quote asset"></select>
+                <label for="dataset">DATASET <span class="label-note">local OHLCV</span></label>
+                <select id="dataset" required>
+                  <option value="">Loading datasets…</option>
+                </select>
+                <div class="dataset-meta" id="dataset-meta">Waiting for dataset details</div>
+              </div>
+              <section class="history-download" id="history-download" aria-labelledby="history-title">
+                <details class="history-details">
+                  <summary class="history-summary"><span><b id="history-source-label">COINBASE · PUBLIC CANDLES</b><strong id="history-title">Add historical data</strong></span><i aria-hidden="true">+</i></summary>
+                  <div class="history-content">
+                    <section class="bulk-history" aria-labelledby="bulk-title">
+                      <h3 id="bulk-title">Collect monthly archive</h3>
+                      <p class="history-description">Binance public archive · 5m candles · completed UTC months. Existing snapshots are reused.</p>
+                      <div class="field-group"><label for="bulk-pairs">MARKETS <span class="label-note">comma or space separated</span></label><input id="bulk-pairs" form="bulk-form" value="ETH/BTC, SOL/BTC, SOL/ETH" autocomplete="off" /></div>
+                      <div class="field-group history-dates"><label>UTC MONTH RANGE <span class="label-note">inclusive</span></label><div class="date-pair"><input id="bulk-start" form="bulk-form" type="month" aria-label="Archive first month" required/><span>—</span><input id="bulk-end" form="bulk-form" type="month" aria-label="Archive last month" required/></div></div>
+                      <p class="history-limit">Up to 20 markets and 12 months per collection.</p>
+                      <button class="history-button" id="bulk-button" type="submit" form="bulk-form">Collect monthly archive ↘</button>
+                      <button class="history-button" id="bulk-stop" type="button" hidden>Stop after current month</button>
+                      <p class="history-status" id="bulk-status" role="status" aria-live="polite"></p>
+                      <ol class="bulk-jobs" id="bulk-jobs" aria-label="Archive collection progress"></ol>
+                    </section>
+                    <p class="history-description">Or download a dated snapshot into the local dataset archive.</p>
+                    <div class="history-pair">
+                      <div class="field-group">
+                        <label for="history-venue">SOURCE</label>
+                        <select id="history-venue" form="download-form"><option value="Coinbase" selected>Coinbase</option><option value="Binance">Binance</option></select>
+                      </div>
+                      <div class="field-group">
+                        <label for="history-market">MARKET</label>
+                        <input id="history-market" form="download-form" type="text" list="coinbase-markets" value="ETH/BTC" autocomplete="off"/><datalist id="coinbase-markets"><option value="ETH/BTC"></option><option value="SOL/BTC"></option><option value="SOL/ETH"></option><option value="BTC/USD"></option><option value="ETH/USD"></option><option value="SOL/USD"></option><option value="ETH/BTC"></option><option value="LINK/USD"></option><option value="ADA/USD"></option><option value="XRP/USD"></option></datalist><datalist id="binance-markets"><option value="ETH/BTC"></option><option value="SOL/BTC"></option><option value="SOL/ETH"></option><option value="BTC/USDT"></option><option value="ETH/USDT"></option><option value="SOL/USDT"></option><option value="BNB/USDT"></option><option value="ETH/BTC"></option><option value="XRP/USDT"></option></datalist>
+                      </div>
+                      <div class="field-group">
+                        <label for="history-timeframe">INTERVAL</label>
+                        <select id="history-timeframe" form="download-form"><option value="5m">5m</option><option value="1h">1h</option></select>
+                      </div>
+                    </div>
+                    <div class="field-group history-dates">
+                      <label>UTC DATE RANGE <span class="label-note">inclusive</span></label>
+                      <div class="date-pair"><input id="history-start" form="download-form" type="date" aria-label="Download start date"/><span>—</span><input id="history-end" form="download-form" type="date" aria-label="Download end date"/></div>
+                    </div>
+                    <div class="history-limit" id="history-limit"></div>
+                    <button class="history-button" type="button" id="history-coverage" form="download-form">Find available start</button>
+                    <p class="dataset-meta" id="coverage-result" role="status"></p>
+                    <button class="history-button" type="button" id="history-button" form="download-form"><span id="history-button-label">Download snapshot</span><span aria-hidden="true">↘</span></button>
+                    <p class="history-status" id="history-status" role="status" aria-live="polite">Snapshot will be saved locally and available after reload.</p>
+                  </div>
+                </details>
+              </section>
+              <div class="field-grid" id="market-group" hidden>
+                <div class="field-group">
+                  <label for="market">MARKET</label
+                  ><select id="market"></select>
+                </div>
+                <div class="field-group">
+                  <label for="timeframe">INTERVAL</label
+                  ><select id="timeframe"></select>
+                </div>
+              </div>
+              <div class="field-group" id="date-group">
+                <label>DATE WINDOW <span class="label-note">optional bounds</span></label>
+                <div class="date-pair">
+                  <input id="date-start" type="date" aria-label="Start date" /><span>—</span
+                  ><input id="date-end" type="date" aria-label="End date" />
+                </div>
+              </div>
+              <button class="primary-button" type="submit" id="run-button">
+                <span id="run-button-label">Run backtest</span><span class="button-arrow">↗</span>
+              </button>
+              <p class="form-footnote" id="form-footnote">
+                Runs use the selected local history and configured execution costs.
+              </p>
+            </form>
+          </aside>
+
+          <section class="main-column">
+            <section class="monitor-card" id="paper-monitor" hidden>
+              <div class="monitor-head">
+                <div>
+                  <p class="eyebrow">PAPER MONITOR</p>
+                  <h2 id="monitor-market">Awaiting paper run</h2>
+                </div>
+                <span class="status-pill" id="monitor-status"><i></i> IDLE</span>
+              </div>
+              <div class="monitor-grid">
+                <div>
+                  <span class="metric-label">LATEST CLOSED BAR</span
+                  ><strong id="monitor-latest">—</strong>
+                </div>
+                <div>
+                  <span class="metric-label">LAST POLL</span><strong id="monitor-poll">—</strong>
+                </div>
+                <div><span class="metric-label">FEED</span><strong id="monitor-feed">—</strong></div>
+              </div>
+              <div class="monitor-bottom">
+                <p id="monitor-message">
+                  Paper sessions connect to the exchange in the background and poll on a 30-second
+                  cadence.
+                </p>
+                <div class="monitor-actions">
+                  <button class="advance-button" id="advance-button" hidden>Advance 12 bars ↗</button
+                  ><button class="text-button" id="audit-button" disabled>Verify replay ↗</button
+                  ><button class="stop-button" id="stop-button" disabled>Stop run</button>
+                </div>
+              </div>
+              <div class="audit-result" id="audit-result" hidden></div>
+            </section>
+
+            <section class="archive-card" id="archive">
+              <div class="archive-heading">
+                <div>
+                  <p class="eyebrow">RUN ARCHIVE</p>
+                  <h2>Saved sessions</h2>
+                </div>
+                <span class="archive-count" id="run-count">—</span>
+              </div>
+              <button class="text-button" id="clear-backtests" type="button" disabled>Clear backtests…</button>
+              <p id="archive-status" role="status" class="dataset-meta" hidden></p>
+              <div class="archive-list" id="run-list">
+                <div class="archive-empty">Loading the local run archive…</div>
+              </div>
+            </section>
+
+            <section class="report research-start" id="research-start" hidden aria-labelledby="research-start-title">
+              <p class="eyebrow">BACKTEST REPORT</p>
+              <h2 id="research-start-title">Ready for a new backtest</h2>
+              <p>Your next run will display its price chart, fills, and candle replay here.</p>
+              <p class="dataset-meta" id="research-start-data"></p>
+              <button class="primary-button" type="submit" form="run-form" id="research-start-button">Run selected backtest ↗</button>
+            </section>
+
+            <section class="report" id="report">
+              <div class="report-head">
+                <div>
+                  <p class="eyebrow">RUN REPORT <span class="report-id" id="report-id"></span></p>
+                  <h2 id="report-title" tabindex="-1">Select a run to inspect</h2>
+                  <p class="report-subtitle" id="report-subtitle">
+                    The captured sample report will appear here when available.
+                  </p>
+                  <p class="run-config-line" id="run-config-line"></p>
+                </div>
+                <div class="report-controls">
+                  <div class="chart-toggle" role="group" aria-label="Chart display">
+                    <button class="chart-toggle-button active" data-chart="price">Line</button
+                    ><button class="chart-toggle-button" data-chart="candles">Candles</button
+                    ><button class="chart-toggle-button" data-chart="equity">Equity</button>
+                  </div>
+                  <button
+                    id="report-refresh"
+                    class="icon-button small"
+                    title="Refresh selected run"
+                    aria-label="Refresh selected run"
+                  >
+                    ↻
+                  </button>
+                </div>
+              </div>
+              <small id="account-as-of" style="order:1"></small>
+              <div class="summary-strip primary-metrics" id="summary-strip">
+                <div class="summary-placeholder">Run metrics are loaded from the selected session.</div>
+              </div>
+              <div class="chart-viewport-controls" role="group" aria-label="Chart zoom and replay position">
+                <button id="chart-pan-earlier" type="button" aria-label="Move replay earlier">← Earlier</button>
+                <button id="chart-pan-later" type="button" aria-label="Move replay later">Later →</button>
+                <span class="chart-controls-divider" aria-hidden="true"></span>
+                <button id="chart-zoom-in" type="button" aria-label="Zoom chart in">＋</button>
+                <button id="chart-zoom-out" type="button" aria-label="Zoom chart out">−</button>
+                <button id="chart-zoom-reset" type="button">Reset zoom</button>
+                <span id="chart-view-status" aria-live="polite"></span>
+              </div>
+              <div class="chart-wrap">
+                <div class="chart-y-label" id="chart-y-label">PRICE</div>
+                <svg
+                  id="main-chart"
+                  role="img"
+                  aria-label="Strategy price and grid chart"
+                  viewBox="0 0 1000 360"
+                  preserveAspectRatio="none"
+                >
+                  <text x="500" y="180" text-anchor="middle" class="chart-empty">
+                    Select a saved run to view its chart
+                  </text>
+                </svg>
+                <div id="chart-hover-label" hidden></div>
+                <div class="chart-legend" id="chart-legend">
+                  <span><i class="legend-line price-line"></i> <b id="price-series-label">Close</b></span
+                  ><button type="button" id="toggle-bands" class="indicator-toggle"><i class="legend-line band-line"></i> Bollinger bands</button
+                  ><button type="button" id="toggle-macd" class="indicator-toggle">MACD</button><span>▲ Open long</span><span>▼ Open short</span><span>◆ Take profit</span><span>× Stop loss</span><span id="file-exit-key" hidden>■ Strategy exit</span>
+                </div>
+              </div>
+              <section id="macd-pane" hidden aria-label="MACD indicator">
+                <div class="macd-key"><b>MACD (12, 26, 9)</b> <span class="macd-line-key">━ MACD</span> <span class="macd-signal-key">━ Signal</span> ▥ Histogram</div>
+                <svg id="macd-chart" role="img" aria-label="MACD and signal lines with histogram centered on zero" preserveAspectRatio="none"></svg>
+              </section>
+              <div id="trade-trace" hidden><span id="trade-trace-label"></span> <button type="button" id="clear-trace">Clear trace</button></div>
+              <section id="hover-readout" aria-label="Chart hover details">Hover over a candle or fill to inspect it. On touchscreens, tap the chart.</section>
+              <div id="candle-inspector"></div>
+              <div class="chart-footer">
+                <span id="chart-range">—</span><span id="chart-points">—</span>
+              </div>
+              <div class="summary-strip secondary-metrics" id="secondary-strip"></div>
+              <div class="fills-heading">
+                <div>
+                  <p class="eyebrow">EXECUTION LOG</p>
+                  <h3>Recent fills</h3>
+                </div>
+                <span id="fills-count">0 events</span>
+              </div>
+              <div class="fills-caption">Most recent events in the available candle window</div>
+              <div class="fills-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>TIME</th>
+                      <th>SIDE</th>
+                      <th>TYPE</th>
+                      <th>PRICE</th>
+                      <th>SIZE</th>
+                      <th>REALIZED P&amp;L</th>
+                      <th>REASON</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fills-body">
+                    <tr>
+                      <td class="fills-empty" colspan="7">Fill details appear with the selected run.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="fills-heading positions-heading">
+                <div>
+                  <p class="eyebrow">OPEN EXPOSURE</p>
+                  <h3>Active layers</h3>
+                </div>
+                <span id="positions-count">0 layers</span>
+              </div>
+              <div class="fills-wrap positions-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>DIRECTION</th>
+                      <th>ENTRY TIME</th>
+                      <th>ENTRY PRICE</th>
+                      <th>SIZE</th>
+                      <th>STOP</th>
+                      <th>TARGET</th>
+                      <th>OPEN P&amp;L</th>
+                    </tr>
+                  </thead>
+                  <tbody id="positions-body">
+                    <tr>
+                      <td class="fills-empty" colspan="7">No open layers.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="report-foot">
+                <span>All figures are denominated in the market’s quote asset.</span
+                ><span>LOCAL DATA · NO ORDERS PLACED</span>
+              </div>
+            </section>
+          </section>
+        </section>
+        <section id="strategy-studio" class="strategy-studio" hidden aria-labelledby="studio-title">
+          <div class="studio-header">
+            <div>
+              <p class="eyebrow">LOCAL STRATEGY LIBRARY</p>
+              <h2 id="studio-title">Strategy studio</h2>
+              <p class="studio-lede">Edit the Python that decides what to buy, sell, and hold. Each run keeps a snapshot of its rules.</p>
+            </div>
+            <button type="button" class="text-button" id="studio-back">Back to workspace</button>
+          </div>
+          <div class="studio-layout">
+            <aside class="studio-library">
+              <label for="studio-list">Strategy library</label>
+              <select id="studio-list"><option value="">Built-in · Bollinger wick grid</option></select>
+              <button type="button" id="new-file">New Python strategy</button>
+              <button type="button" id="reload-files">Refresh directory</button>
+              <div id="strategy-status" role="status" class="dataset-meta"></div>
+              <button type="button" id="strategy-from-run">Copy settings from displayed run</button>
+            </aside>
+            <div class="studio-editor" id="file-editor" hidden>
+              <section class="studio-section">
+                <p class="eyebrow">PYTHON STRATEGY</p><h3 id="file-title">Strategy rules</h3>
+                <p id="file-description"></p>
+              </section>
+              <section class="studio-section"><p class="eyebrow">RUN SETTINGS</p><h3>Test a variation</h3><p>These values apply to the next run. Saving a file reloads its defaults.</p><div id="file-settings" class="field-grid studio-fields"></div>
+                <div class="field-grid studio-fields">
+                  <label>Starting capital<input type="number" id="file-capital" min="0" step="any"></label>
+                  <label>Fee (bps)<input type="number" id="file-fee" min="0" step="any"></label>
+                  <label>Slippage (bps)<input type="number" id="file-slip" min="0" step="any"></label>
+                </div>
+              </section>
+              <section class="studio-section">
+                <p class="eyebrow">SOURCE FILE</p><h3>Edit the rules</h3>
+                <div class="field-group"><label for="file-name">Filename in strategies/</label><input id="file-name" type="text" spellcheck="false" placeholder="my_strategy.py"></div>
+                <div class="field-group"><label for="file-source">Entry and exit rules</label><textarea id="file-source" rows="21" wrap="off" spellcheck="false" aria-describedby="file-help"></textarea></div>
+                <p class="dataset-meta" id="file-help">Edit SETTINGS to change the file defaults. Edit on_bar to change its rules. Python runs locally with the server’s permissions.</p>
+                <div class="strategy-actions"><button id="save-file" type="button">Save Python file</button><button id="copy-file" type="button">Duplicate as draft</button></div>
+                <p role="status" id="file-status"></p>
+              </section>
+
+            </div>
+            <div class="studio-editor" id="preset-editor">
+              <section class="studio-section strategy-editor">
+                <div class="studio-section-heading"><div><p class="eyebrow">ENTRY & SIGNAL</p><h3>Define the setup</h3></div></div>
+                <div class="field-group"><label for="strategy-name">Strategy name</label><input id="strategy-name" maxlength="80" placeholder="Name your strategy"></div>
+                <div class="field-group"><label for="signal_model">Entry signal</label><select id="signal_model"><option value="wick-grid">Bollinger band wick touch</option><option value="sma-cross">Close crosses moving average</option><option value="custom">Custom entry conditions</option></select></div>
+                <div id="custom-rules" hidden></div>
+                <div class="field-grid studio-fields">
+                  <div class="field-group"><label for="bb_period">Band length (bars)</label><input type="number" id="bb_period" step="1" min="2"></div>
+                  <div class="field-group"><label for="bb_mult">Band width (standard deviations)</label><input type="number" id="bb_mult" step="any" min="1e-06"></div>
+                  <div class="field-group"><label for="trend_period">Trend SMA length (bars)</label><input type="number" id="trend_period" step="1" min="2"></div>
+                  <div class="field-group"><label for="trend_lookback">Trend comparison (bars ago)</label><input type="number" id="trend_lookback" step="1" min="1"></div>
+                  <div class="field-group"><label for="tier2_mult">Repeat target (× band half-width)</label><input type="number" id="tier2_mult" step="any" min="1e-06"></div>
+                </div>
+                <div class="plain-language"><span>IN PLAIN ENGLISH</span><p id="strategy-explanation">The strategy explanation will update as you edit the settings.</p></div>
+              </section>
+              <section class="studio-section">
+                <div class="studio-section-heading"><div><p class="eyebrow">GRID CONSTRUCTION</p><h3>Layer spacing</h3></div></div>
+                  <div class="field-group"><label for="execution_model">Execution model</label><select id="execution_model"><option value="signal-layers">Signal layers</option><option value="single-position">Single position</option><option value="price-grid">Price grid</option></select></div>
+                <div id="grid-controls" class="field-grid studio-fields">
+                  <div class="field-group"><label for="grid_lines">Grid lines</label><input id="grid_lines" type="number" min="1" step="1"></div>
+                  <div class="field-group"><label for="grid_spacing">Grid spacing</label><select id="grid_spacing"><option value="fixed">Fixed</option><option value="geometric">Geometric</option><option value="band">Bollinger band</option></select></div>
+                  <div class="field-group"><label for="grid_step_pct">Grid step (% of price)</label><input id="grid_step_pct" type="number" min="0" step="any"></div>
+                  <div class="field-group"><label for="grid_growth">Geometric growth</label><input id="grid_growth" type="number" min="0" step="any"></div>
+
+                </div>
+                <p class="dataset-meta">Fixed and geometric steps use a percentage of price. Band spacing uses a multiplier of the Bollinger band half-width.</p>
+              </section>
+              <section class="studio-section">
+                <div class="studio-section-heading"><div><p class="eyebrow">RISK & EXECUTION</p><h3>Capital and recovery</h3></div></div>
+                <div class="field-grid studio-fields">
+                  <div class="field-group"><label for="capital">Starting capital</label><div class="input-unit"><input id="capital" type="number" min="0.00000001" step="any"><span id="capital-unit">quote</span></div></div>
+                  <div class="field-group"><label for="size">Order size</label><div class="input-unit"><input id="size" type="number" min="0.01" max="100" step="any"><span>%</span></div></div>
+                  <div class="field-group"><label for="tp">Take profit</label><div class="input-unit"><input id="tp" type="number" min="0.01" step="any"><span>%</span></div></div>
+                  <div class="field-group"><label for="sl">Stop loss</label><div class="input-unit"><input id="sl" type="number" min="0.01" step="any"><span>%</span></div></div>
+                  <div class="field-group"><label for="fee">Fee</label><div class="input-unit"><input id="fee" type="number" min="0" step="any"><span>bps</span></div></div>
+                  <div class="field-group"><label for="slip">Slippage</label><div class="input-unit"><input id="slip" type="number" min="0" step="any"><span>bps</span></div></div>
+                </div>
+                <div class="field-group direction-field"><label for="direction">Signal routing</label><select id="direction"><option value="legacy-long">Legacy long routing</option><option value="long-short">Directional long &amp; short</option></select></div>
+                <div class="recovery-guidance"><strong>Risk &amp; recovery · exit spacing</strong><p>This setting changes only profit-taking exits after the realized net basket gains cover the estimated loss on remaining stops, including fees and slippage. New additions keep using the grid spacing above. Fixed and geometric steps use a percentage of price; band spacing uses a multiplier of Bollinger half-width. Review worst drawdown and open layers in each replay before using a strategy in paper mode.</p><div class="field-grid studio-fields"><div class="field-group"><label for="grid_after_exits">Profit-taking spacing after grid</label><select id="grid_after_exits"><option value="unchanged">Unchanged</option><option value="fixed">Fixed</option><option value="geometric">Geometric</option><option value="band">Bollinger band</option></select></div><div class="field-group"><label for="grid_after_step_pct">Later exit step (% of price)</label><input id="grid_after_step_pct" type="number" min="0" step="any"></div><div class="field-group"><label for="grid_after_growth">Later exit growth</label><input id="grid_after_growth" type="number" min="0" step="any"></div></div></div>
+              </section>
+              <div class="strategy-actions"><button type="button" id="strategy-create">Save as new</button><button type="button" id="strategy-update" disabled>Save new version</button></div>
+            </div>
+          </div>
+        </section>
+      </main>
+      <footer class="page-footer">
+        <span>GRIDLINE <span class="footer-dot">·</span> A LOCAL STRATEGY WORKSPACE</span
+        ><span>For research and paper simulation</span>
+      </footer>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </div>
+  </body>
+</html>
