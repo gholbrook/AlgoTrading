@@ -1,0 +1,1 @@
+Place 0.236 at the top of your potential take-profit (resistance), so that -1.618 is at the correct price.

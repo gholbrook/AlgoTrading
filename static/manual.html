@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gridlab · Manual replay</title>
+<script>if(localStorage.getItem('gridline.theme')==='light')document.documentElement.dataset.theme='light';</script>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/manual.css">
+<script src="/static/manual-engine.js" defer></script><script src="/static/manual.js" defer></script>
+</head>
+<body><div class="app-shell">
+<header class="topbar"><a class="brand" href="/">gridlab</a><a href="/">← Research workbench</a><button id="theme">Toggle theme</button></header>
+<main>
+<section class="intro-row"><div><p class="eyebrow">HISTORICAL PRACTICE</p><h1>Manual <em>replay.</em></h1></div><p>Your decisions. One closed candle at a time.<br>Session and presets are saved in this browser.</p></section>
+<p id="message" role="status" aria-live="polite"></p>
+<div class="manual-layout">
+<aside>
+<section class="manual-panel"><h2>Replay setup</h2>
+<label>Quote currency<select id="quote"><option value="BTC">BTC</option><option value="ETH">ETH</option><option value="">All quotes</option></select></label>
+<label>Dataset<select id="dataset"></select></label><p id="coverage" class="note"></p>
+<div class="two"><label>Start date · UTC<input id="start" type="date"></label><label>End date · UTC<input id="end" type="date"></label></div>
+<label>Starting quote balance<input id="capital" type="number" value="1" min="0.00000001" step="any"></label>
+<div class="two"><label>Fee · basis points<input id="fee" type="number" value="20" min="0" max="1000"></label><label>Slippage · bps<input id="slip" type="number" value="2" min="0" max="1000"></label></div>
+<button id="start-session" class="primary">Start new replay</button></section>
+<section class="manual-panel"><h2>Order ticket</h2><p class="note">Size uses available cash for buys and unreserved holdings for sells.</p>
+<label>Size · %<input id="size" type="number" value="25" min="0.01" max="100" step="any"></label>
+<label>Order type<select id="type"><option value="market">Market · next candle open</option><option value="limit">Limit</option></select></label>
+<label id="limit-label" hidden>Limit price · quote<input id="limit" type="number" min="0" step="any"></label>
+<div class="two"><button id="buy" class="primary" data-trading>Buy</button><button id="sell" data-trading>Sell</button></div>
+<button id="close-all" data-trading>Cancel sell orders &amp; sell all holdings</button>
+<p class="note">Market orders fill at the next open with slippage. Limits fill at their price or a better opening price. Attached exits become eligible one candle after the buy fills. Candle fills assume sufficient liquidity.</p>
+</section>
+</aside>
+<div>
+<section class="manual-panel"><div class="replay-toolbar"><h2 id="pair">Choose a dataset</h2><div><button id="step" data-trading>Next candle →</button><button id="step10" data-trading>+10 candles</button></div></div>
+<p id="cursor" class="note">Start a replay to reveal the first candle.</p>
+<canvas id="chart" height="350" aria-label="Closed candles and manual fills"></canvas><p id="hover" class="note">Hover to inspect OHLC. Scroll to zoom.</p>
+<div id="stats" class="manual-stats"></div></section>
+<section class="manual-panel"><div class="replay-toolbar"><h2>Pending orders</h2><button id="cancel-all" data-trading>Cancel all pending</button></div><div id="orders"></div></section>
+<section class="manual-panel"><details id="presets-panel"><summary>Order presets · ladders &amp; rules</summary>
+<p>Apply a preset to queue its buys now. Each filled buy creates its own profit-taking sells.</p>
+<label>Saved preset<select id="preset-select"></select></label><label>Preset name<input id="preset-name" value="Four buys with profit targets" maxlength="100"></label>
+<label>Rules · JSON<textarea id="preset-code" rows="18" spellcheck="false"></textarea></label>
+<div class="preset-actions"><button id="save-preset">Save preset</button><button id="apply-preset" class="primary" data-trading>Place preset buys</button><button id="delete-preset">Delete preset</button></div>
+<p class="note">cashPct is a percentage of available cash when clicked. type is market or limit. For limits, price = reference × (1 + offsetPct / 100) + rangeMultiple × average candle high−low over rangePeriod completed candles. reference can be open, high, low or close. Use negative offsets/multiples for lower buys. Targets use gainPct above the actual buy fill and qtyPct of that fill. Allocations and target quantities must each total at most 100%. Rules are evaluated only when you click.</p>
+</details></section>
+<section class="manual-panel"><h2>Recent fills</h2><div id="fills"></div></section>
+</div></div></main></div></body></html>

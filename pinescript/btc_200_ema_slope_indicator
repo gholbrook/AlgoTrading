@@ -1,0 +1,53 @@
+//@version=6
+indicator("BTC 200-day EMA slope at visible candle", overlay = true)
+
+btc = input.symbol("COINBASE:BTCUSD", "Bitcoin price feed")
+sensitivity = input.float(1.0, "Daily EMA change (%) for a 45° tilt",
+                          minval = 0.01, step = 0.05)
+
+// Yesterday's completed daily EMA is known from the start of today.
+prevDaily = request.security(btc, "1D", ta.ema(close, 200)[1],
+                             lookahead = barmerge.lookahead_on)
+
+// On an intraday chart, reconstruct today's developing daily EMA
+// using only the BTC price available at this chart candle.
+btcClose = request.security(btc, timeframe.period, close)
+partialEma = prevDaily + (2.0 / 201.0) * (btcClose - prevDaily)
+
+// On daily and higher charts, use the last available daily reading.
+[dailyEma, dailyPrior] = request.security(
+    btc, "1D", [ta.ema(close, 200), ta.ema(close, 200)[1]],
+    lookahead = barmerge.lookahead_off)
+
+emaNow = timeframe.isintraday ? partialEma : dailyEma
+emaPrior = timeframe.isintraday ? prevDaily : dailyPrior
+
+var float visibleChange = na
+if time == chart.right_visible_bar_time
+    visibleChange := 100.0 * (emaNow / emaPrior - 1.0)
+
+// Draw three line segments in a small table anchored to the viewport.
+// Table rows increase downward, so a rising EMA uses a negative y.
+var table badge = table.new(position.top_right, 41, 41)
+
+if barstate.islast and not na(visibleChange)
+    float angle = math.atan(visibleChange / sensitivity)
+    float dx = math.cos(angle)
+    float dy = -math.sin(angle)  // Screen rows increase downward.
+    color ink = visibleChange > 0 ? color.lime : visibleChange < 0 ? color.red : color.gray
+
+    for row = 0 to 40
+        for col = 0 to 40
+            float x = col - 20.0
+            float y = row - 20.0
+
+            // Find the closest point on the finite line segment.
+            float along = math.max(-17.0, math.min(17.0, x * dx + y * dy))
+            float ex = x - along * dx
+            float ey = y - along * dy
+            float distance = math.sqrt(ex * ex + ey * ey)
+
+            // Solid center, softly faded edges.
+            float coverage = math.max(0.0, math.min(1.0, 1.6 - distance))
+            color pixel = color.new(ink, 100.0 * (1.0 - coverage))
+            table.cell(badge, col, row, "", width = 0.15, height = 0.27, bgcolor = pixel)
