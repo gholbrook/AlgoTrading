@@ -1,7 +1,6 @@
 """Run after generating Binance monthly results with grid_walk_forward.cjs."""
 import json
 from pathlib import Path
-from statistics import mean
 import numpy as np
 
 ROOT = Path('var/walk-forward')

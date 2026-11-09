@@ -1,6 +1,6 @@
-# Gridline
+# Gridlab
 
-A local workbench for testing the Bollinger wick grid on historical candles and following it forward with simulated capital. Backtests, recorded rehearsals, and Kraken paper sessions share one execution engine.
+A local workspace for blind grid replay, strategy backtesting, and paper trading. Backtests, recorded rehearsals, and Kraken paper sessions share one execution engine.
 
 ## Start the workbench
 
@@ -10,7 +10,7 @@ Requires Python 3.11 or newer. The workbench uses the Python standard library. F
 python3 server.py
 ```
 
-Open [Gridline on localhost](http://127.0.0.1:8765). On a fresh installation, download exchange candles to create the first backtest. The service binds to loopback. The browser UI and charts work offline. Exchange downloads and Kraken paper sessions need network access.
+Open [Grid replay](http://127.0.0.1:8765) to draw and test a channel candle by candle. Open the [Workbench](http://127.0.0.1:8765/workbench) to download historical candles, edit strategies, and run backtests or paper sessions. The service binds to loopback. The browser UI and charts work offline. Exchange downloads and Kraken paper sessions need network access.
 
 The default research catalog contains Binance and Coinbase exchange history. Use `--db /path/to/gridline.sqlite3` or `--port 8766` to change the database or port.
 
@@ -95,10 +95,11 @@ Kraken's OHLC endpoint includes an unfinished final row and bounds the available
 
 Paper simulation uses **bar-close processing**. An entry labeled at a candle's open is reconstructed only after that candle closes, with the signal already fixed from the preceding bar. The service polls every 30 seconds under normal conditions. Network timeouts and multi-market requests can lengthen that interval. Live paper charts display up to the latest 1,500 points. Historical and recorded rehearsal charts include the full run. Replay verification covers every captured candle in all modes.
 
-## Verification and roadmap
+## Verification
 
 ```sh
-python3 -m unittest discover -v
+python3 -m unittest discover -s tests -v
+node tests/test_manual_engine.js
 ```
 
-The offline suite covers execution accounting, closed-bar ingestion, replay, persistence and the HTTP workflow. The [project plan](docs/PLAN.md) records the differences found in the earlier implementation, the release criteria and the remaining forward-validation work.
+The offline suite covers execution accounting, closed-bar ingestion, replay, persistence and the HTTP workflow. The [grid research log](notes/grid-research-log.md) records the walk-forward protocol, findings, and candidate configurations.

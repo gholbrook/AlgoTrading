@@ -1,11 +1,8 @@
 """Tests for safe strategy-file persistence and HTTP endpoints."""
 import hashlib
-import json
 import tempfile
 import unittest
 from pathlib import Path
-from urllib.error import HTTPError
-from urllib.request import Request, urlopen
 
 from gridlab.strategy_files import StrategyFileConflict, StrategyFileError, StrategyFiles
 
