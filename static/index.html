@@ -52,6 +52,7 @@
           </button>
           <button class="mode-tab" id="open-studio" type="button"><span class="tab-index">03</span> Strategies <span class="tab-sub">rules &amp; settings</span></button>
           <a class="mode-tab" href="/manual"><span class="tab-index">04</span> Manual <span class="tab-sub">click &amp; replay</span></a>
+          <a class="jump-link" href="/value-area">Value-area test</a>
           <span class="tabs-rule"></span><a class="jump-link" href="#setup">Setup</a
           ><a class="jump-link" href="#archive">Archive</a>
         </nav>
@@ -234,6 +235,7 @@
                 </div>
                 <div class="report-controls">
                   <div class="chart-toggle" role="group" aria-label="Chart display">
+                    <button class="chart-toggle-button" data-chart="detailed" hidden>Detailed</button>
                     <button class="chart-toggle-button active" data-chart="price">Line</button
                     ><button class="chart-toggle-button" data-chart="candles">Candles</button
                     ><button class="chart-toggle-button" data-chart="equity">Equity</button>
@@ -253,14 +255,18 @@
                 <div class="summary-placeholder">Run metrics are loaded from the selected session.</div>
               </div>
               <div class="chart-viewport-controls" role="group" aria-label="Chart zoom and replay position">
+                <button id="previous-trade" type="button" title="Previous candle with a filled entry or exit" hidden disabled>← Previous trade</button>
+                <button id="next-trade" type="button" title="Next candle with a filled entry or exit" hidden disabled>Next trade →</button>
                 <button id="chart-pan-earlier" type="button" aria-label="Move replay earlier">← Earlier</button>
                 <button id="chart-pan-later" type="button" aria-label="Move replay later">Later →</button>
                 <span class="chart-controls-divider" aria-hidden="true"></span>
                 <button id="chart-zoom-in" type="button" aria-label="Zoom chart in">＋</button>
                 <button id="chart-zoom-out" type="button" aria-label="Zoom chart out">−</button>
                 <button id="chart-zoom-reset" type="button">Reset zoom</button>
+                <button id="expand-backtest" type="button" hidden>Full screen</button>
                 <span id="chart-view-status" aria-live="polite"></span>
               </div>
+              <iframe id="backtest-chart" title="Detailed backtest chart" allowfullscreen hidden></iframe>
               <div class="chart-wrap">
                 <div class="chart-y-label" id="chart-y-label">PRICE</div>
                 <svg

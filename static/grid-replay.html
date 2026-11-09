@@ -1,0 +1,59 @@
+<!doctype html><html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gridlab · Grid replay</title><link rel="stylesheet" href="/static/grid-replay.css"><script defer src="/static/manual-engine.js"></script><script defer src="/static/grid-replay.js"></script></head>
+<body><main>
+<header><div class="brand"><b>gridlab</b><span>/</span> Grid replay</div><nav><a href="/workbench">Workbench</a><button id="setup" popovertarget="session-menu">Session settings</button></nav></header>
+<section id="session-menu" popover><h2>Replay session</h2><label>Historical market<select id="replay-market"></select></label><label>Continuous history<select id="dataset"></select></label><label><span><input type="checkbox" id="show-history-dates"> Show history dates</span></label><label><span><input type="checkbox" id="show-usd"> Show historical USD volume conversion</span></label><label>Starting balance in quote currency<input type="number" id="capital" min="0.00000001" step="any" value="1"></label><p>New grids keep the center interwoven. Of the original 48 price levels, the six highest buys and six lowest sells are omitted, leaving 18 buys and 18 sells. Each buy funds its paired sell. Buy allocations range from 1% near the center to 20% at the edges. Fee 0.02% per fill. Market exits use 0.01% slippage.</p><button id="new">Start new blind replay</button></section>
+<section class="heading">
+  <div><h1 id="market">Grid replay</h1><div id="time"></div></div>
+  <div class="tools">
+    <div class="tool-group"><select id="chart-interval" aria-label="Chart timeframe"><option value="5m">5 min</option><option value="1h">1 hour</option></select>
+    <button id="indicators" popovertarget="indicator-menu">Indicators</button></div>
+    <div class="tool-group"><button id="draw">Draw channel</button>
+    <span id="channel-width" hidden title="Starting channel width as a percentage of the midpoint between the two lines."></span>
+    <button id="grid-settings" popovertarget="grid-panel" hidden>Grid settings</button>
+    <button id="arm" disabled>Arm grid</button><button id="cancel" hidden>Cancel &amp; sell</button></div>
+  </div>
+</section>
+<section id="grid-panel" popover aria-labelledby="panel-title">
+  <div class="panel-title"><h2 id="panel-title">Grid settings</h2><button class="panel-close" popovertarget="grid-panel" popovertargetaction="hide" aria-label="Close grid settings">×</button></div>
+  <fieldset id="grid-exits"><legend>Channel</legend>
+    <label id="grid-replenishment">Movement<select id="grid-mode"><option value="shift">Shifting channel</option><option value="fixed">Fixed channel</option></select></label>
+    <label>Stop below fill <span class="unit-field"><input id="stop-pct" type="number" min="0" max="99.99" step="any" value="2" title="Set to zero to disable the stop"><span>%</span></span></label>
+    <label id="catchup-row">Outside-close catch-up <span class="unit-field"><input id="shift-cap" type="number" min="1" max="47" step="1" value="8"><span>lines</span></span></label>
+  </fieldset>
+  <fieldset id="fixed-exit"><legend>Exit</legend><label>Cancel grid and sell holdings<select id="rule"><option value="manual">Manually only</option><option value="outside">On a close outside the channel</option></select></label></fieldset>
+  <fieldset id="live-replenishment"><legend>Rules</legend>
+    <label>Replenish buys<select id="replenish-active"><option value="off">Off</option><option value="on">Always</option><option value="minutes" selected>Intraday EMA slope</option><option value="ema">Daily EMA slope</option></select></label>
+    <div id="ema-rule-fields" class="rule-params" hidden><label hidden>EMA lookback (minutes)<input id="rule-minutes" type="number" min="10" max="10080" step="5" value="720" required></label><label>EMA period (days)<input id="rule-period" type="number" min="2" max="500" value="200"></label><label>Minimum EMA change (%)<input id="rule-threshold" aria-describedby="rule-threshold-help" type="number" step="any" value="0.02"></label><small id="rule-threshold-help">Compares the last two daily EMA values. At 0%, the rule is on when the EMA is flat or rising.</small></div>
+    <label>At paired sell line<select id="trail-mode"><option value="off">Sell at limit</option><option value="ema">Trail when daily EMA rises</option><option value="minutes">Trail on intraday EMA slope</option></select></label>
+    <div id="trail-fields" class="rule-params" hidden>
+      <label hidden>EMA lookback (minutes)<input id="trail-minutes" type="number" min="10" max="10080" step="5" value="720" required></label><label>EMA period (days)<input id="trail-period" type="number" min="2" max="500" value="200"></label>
+      <label>EMA change above (%)<input id="trail-threshold" type="number" step="any" value="0"></label>
+      <label>Trail below high (%)<input id="trail-distance" type="number" min="0.01" max="99.99" step="any" value="1" required></label>
+      <small>At the sell line, a qualifying position starts trailing. Each candle’s high can raise its stop for the next candle. An active trail stays in force.</small>
+    </div>
+    <div id="lower-rule-editor"><label>Shift down near bottom<select id="lower-mode"><option value="on">Always</option><option value="off">Off</option><option value="ema">Daily EMA slope</option><option value="minutes">Intraday EMA slope</option></select></label>
+    <label>Bottom trigger &amp; shift (lines)<input id="lower-lines" type="number" min="1" max="47" step="1" value="8" required></label>
+    <div id="lower-fields" class="rule-params" hidden><label hidden>EMA lookback (minutes)<input id="lower-minutes" type="number" min="10" max="10080" step="5" value="720" required></label><label>EMA period (days)<input id="lower-period" type="number" min="2" max="500" value="200"></label><label>Minimum EMA change (%)<input id="lower-threshold" aria-describedby="lower-threshold-help" type="number" step="any" value="0"></label><small id="lower-threshold-help">Compares the last two daily EMA values. At 0%, the rule is on when the EMA is flat or rising.</small></div></div>
+    <div id="upper-rule-editor"><label>Shift up near top<select id="upper-mode"><option value="on">Always</option><option value="off">Off</option><option value="ema">Daily EMA slope</option><option value="minutes">Intraday EMA slope</option></select></label>
+    <label>Top trigger &amp; shift (lines)<input id="upper-lines" type="number" min="1" max="47" step="1" value="8" required></label>
+    <div id="upper-fields" class="rule-params" hidden><label hidden>EMA lookback (minutes)<input id="upper-minutes" type="number" min="10" max="10080" step="5" value="720" required></label><label>EMA period (days)<input id="upper-period" type="number" min="2" max="500" value="200"></label><label>Minimum EMA change (%)<input id="upper-threshold" aria-describedby="upper-threshold-help" type="number" step="any" value="0"></label><small id="upper-threshold-help">Compares the last two daily EMA values. At 0%, the rule is on when the EMA is flat or rising.</small></div></div>
+  </fieldset>
+  <p id="rule-readout" hidden></p>
+  <button class="panel-done" popovertarget="grid-panel" popovertargetaction="hide">Done</button>
+</section>
+<section id="indicator-menu" popover>
+<h2>Indicators</h2>
+<label><input id="ema-visible" type="checkbox"> Candle EMA <input id="ema-period" aria-label="EMA period" type="number" min="2" max="1000" value="200"></label>
+<label><input id="daily-ema-visible" type="checkbox"> 200-day EMA (last completed day)</label>
+<h3>Fixed range volume profile</h3>
+<label>Price bins <input id="vp-bins" type="number" min="2" max="100" value="48"></label>
+<label>Value area (%) <input id="vp-area" type="number" min="1" max="100" value="70"></label>
+<p>Volume is spread across each candle’s high–low range.</p>
+<button id="vp-select">Select candle range</button>
+<button id="vp-toggle" hidden>Hide profile</button> <button id="vp-remove" hidden>Remove</button>
+<p id="vp-values"></p></section>
+<div id="grid-state" aria-label="Grid execution status">Not armed · Loading candles</div>
+<div class="plot"><canvas id="chart" tabindex="0" aria-label="Revealed candles. Click once at the upper price, then once at the lower price."></canvas><output id="readout"></output></div>
+<section class="transport"><div><button id="play">▶ Play</button><button id="step">Next candle →</button><select id="speed" aria-label="Playback speed"><option value="1000">1×</option><option value="500">2×</option><option value="200">5×</option></select></div><div><button id="latest" title="Return to latest revealed candle">Latest</button><button id="minus" aria-label="Zoom out">−</button><button id="plus" aria-label="Zoom in">+</button></div></section>
+<div id="status" role="status"></div><footer><div><span id="account"></span> <span id="traded-volume" title="Sum of executed buy and sell notionals before fees. USD conversion uses the quote currency’s five-minute USD candle open at each fill."></span></div><details><summary id="fillcount">Trade log · 0 fills</summary><div id="fills"></div><button id="older-fills" type="button" hidden>Show older fills</button></details></footer>
+</main></body></html>

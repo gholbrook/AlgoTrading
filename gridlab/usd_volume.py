@@ -22,9 +22,24 @@ def usd_volume(store, run_id):
             GROUP BY p.ts ORDER BY p.ts
         """, (run_id,)).fetchall()
 
+    rates = quote_usd_rates(store, quote, [r[0] for r in fills])
+    total = 0.0
+    missing_count = 0
+    cumulative = []
+    for ts, count, notional in fills:
+        rate = 1.0 if quote == "USD" else rates.get(ts)
+        if rate is None:
+            missing_count += count
+        else:
+            total += notional * rate
+        cumulative.append([ts, total, missing_count])
+    return {"cumulative": cumulative}
+
+
+def quote_usd_rates(store, quote, timestamps):
+    timestamps = sorted(set(timestamps))
     rates = {}
-    if quote != "USD" and fills:
-        timestamps = [r[0] for r in fills]
+    if quote != "USD" and timestamps:
         path = Path(store.path).parent / "coinbase_usd_5m.sqlite3"
         with closing(sqlite3.connect(path, timeout=30)) as cache:
             cache.execute("CREATE TABLE IF NOT EXISTS rates (quote TEXT, ts INTEGER, price REAL, PRIMARY KEY(quote,ts))")
@@ -43,14 +58,4 @@ def usd_volume(store, run_id):
                     cache.executemany("INSERT OR IGNORE INTO rates VALUES(?,?,?)",
                                       ((quote,ts,bar["open"]) for ts,bar in page.items()))
                 i = stop
-    total = 0.0
-    missing_count = 0
-    cumulative = []
-    for ts, count, notional in fills:
-        rate = 1.0 if quote == "USD" else rates.get(ts)
-        if rate is None:
-            missing_count += count
-        else:
-            total += notional * rate
-        cumulative.append([ts, total, missing_count])
-    return {"cumulative": cumulative}
+    return {ts: rates[ts] for ts in timestamps if ts in rates}

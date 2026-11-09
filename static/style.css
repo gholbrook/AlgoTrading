@@ -1656,3 +1656,8 @@ td:first-child {
 .macd-key { display: flex; gap: 1em; align-items: center; color: var(--muted); font: 11px var(--mono); }
 .macd-line-key { color: var(--macd-line); }
 .macd-signal-key { color: var(--macd-signal); }
+
+#backtest-chart { order: 2; width: 100%; height: clamp(560px, 76vh, 940px); border: 0; }
+
+#report:fullscreen { display: block; overflow: auto; background: var(--panel); padding: 16px; }
+#report:fullscreen #backtest-chart { height: 76vh; }

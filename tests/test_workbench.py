@@ -39,6 +39,17 @@ class LifecycleTests(unittest.TestCase):
         with urlopen(request, timeout=5) as response:
             return json.load(response)
 
+    def test_value_area_experiment_api(self):
+        result = self.api("/api/research/value-area", {"dataset": SAMPLE,
+                          "config": {"candles": 20, "horizon": 12, "grace": 1}})
+        self.assertIn("mean_duration_candles", result["summary"])
+        self.assertTrue(result["episodes"])
+        with urlopen(self.base + "/value-area") as response:
+            self.assertIn(b"Value-area", response.read())
+        with self.assertRaises(HTTPError) as error:
+            self.api("/api/research/value-area", {"dataset": SAMPLE, "config": {"candles": 1}})
+        self.assertEqual(error.exception.code, 400)
+
     def test_manual_candles_and_page(self):
         result = self.api("/api/manual/candles", {"dataset": SAMPLE})
         self.assertEqual(result["bars"], self.rows)

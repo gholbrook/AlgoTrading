@@ -8,14 +8,17 @@ import threading
 from contextlib import suppress
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 # A direct script launch puts gridlab/ itself on the import path.
 if __name__ == "__main__" and not __package__:
     sys.path.insert(0, str(ROOT))
 
-from gridlab.usd_volume import usd_volume
+from tools.replay_daily import read_closes
+from gridlab.replay_history import replay_prefix
+from gridlab.usd_volume import quote_usd_rates, usd_volume
+from research.value_area_stays import run_experiment
 from gridlab import engine
 from tools.bulk_history import collect_month
 from gridlab.datasets import Dataset, LazyDataset, CombinedDataset, SAMPLE, combine_datasets, load_bulk_datasets, load_datasets, load_history_datasets
@@ -261,11 +264,20 @@ class Workbench:
             self.wake.wait(POLL_SECONDS)
 
 
-ASSETS = {"/manual": ("manual.html", "text/html; charset=utf-8"),
+ASSETS = {"/range-explorer": ("range-explorer.html", "text/html; charset=utf-8"),
+          "/static/range-explorer.js": ("range-explorer.js", "text/javascript; charset=utf-8"),
+          "/static/range-explorer.css": ("range-explorer.css", "text/css; charset=utf-8"),
+          "/value-area": ("value-area.html", "text/html; charset=utf-8"),
+          "/static/value-area.js": ("value-area.js", "text/javascript; charset=utf-8"),
+          "/manual": ("manual.html", "text/html; charset=utf-8"),
           "/static/manual.css": ("manual.css", "text/css; charset=utf-8"),
           "/static/manual.js": ("manual.js", "text/javascript; charset=utf-8"),
           "/static/manual-engine.js": ("manual-engine.js", "text/javascript; charset=utf-8"),
-          "/": ("index.html", "text/html; charset=utf-8"),
+          "/": ("grid-replay.html", "text/html; charset=utf-8"),
+          "/grid-replay": ("grid-replay.html", "text/html; charset=utf-8"),
+          "/static/grid-replay.js": ("grid-replay.js", "text/javascript; charset=utf-8"),
+          "/static/grid-replay.css": ("grid-replay.css", "text/css; charset=utf-8"),
+          "/workbench": ("index.html", "text/html; charset=utf-8"),
           "/index.html": ("index.html", "text/html; charset=utf-8"),
           "/static/style.css": ("style.css", "text/css; charset=utf-8"),
           "/static/inspect.js": ("inspect.js", "text/javascript; charset=utf-8"),
@@ -303,9 +315,16 @@ class Handler(BaseHTTPRequestHandler):
         path = urlsplit(self.path).path
         try:
             if method == "GET":
+                if path == "/" and any(k in parse_qs(urlsplit(self.path).query) for k in ("run", "view")):
+                    path = "/workbench"
                 if path in ASSETS:
                     filename, mime = ASSETS[path]
                     return self.send_bytes(200, (ROOT / "static" / filename).read_bytes(), mime)
+                if re.fullmatch(r"/api/research/range-explorer(?:-balanced50|-adaptive[1-4])?", path):
+                    saved = ROOT / "var" / (path.rsplit("/", 1)[1] + ".json")
+                    if not saved.exists():
+                        return self.send_json(404, {"error": "Import an exported value-area JSON to begin."})
+                    return self.send_bytes(200, saved.read_bytes(), "application/json; charset=utf-8")
                 if path == "/api/context":
                     return self.send_json(200, app.context())
                 if path == "/api/strategies":
@@ -326,12 +345,30 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(size))
                 if not isinstance(body, dict):
                     raise ValueError("Expected a JSON object.")
+                if path == "/api/research/value-area":
+                    data = app.dataset(body.get("dataset"))
+                    return self.send_json(200, run_experiment(data, body.get("config"), body.get("start"), body.get("end")))
+                if path == "/api/manual/usd-rates":
+                    quote = body.get("quote", "")
+                    timestamps = body.get("timestamps")
+                    if not isinstance(quote, str) or not re.fullmatch(r"[A-Z0-9]{1,12}", quote):
+                        raise ValueError("Invalid quote currency.")
+                    if not isinstance(timestamps, list) or not 1 <= len(timestamps) <= 100 or any(
+                            type(ts) is not int or not 0 < ts < 4102444800 or ts % 300 for ts in timestamps):
+                        raise ValueError("Expected up to 100 five-minute timestamps.")
+                    return self.send_json(200, quote_usd_rates(app.store, quote, timestamps))
                 if path == "/api/manual/candles":
                     data = app.dataset(body.get("dataset"))
                     warmup, selected = data.select(body.get("start"), body.get("end"), warmup_count=120)
+                    prefix = []
+                    if "prehistory" in body:
+                        if body.get("start") or body.get("end"):
+                            raise ValueError("Blind replay history requires the full dataset.")
+                        prefix = replay_prefix(data, app.history_dir.parent / "replay-prehistory", body["prehistory"])
                     return self.send_json(200, {"market": data.market, "timeframe": data.timeframe,
-                                                "fingerprint": data.fingerprint,
-                                                "bars": warmup + selected, "index": len(warmup)})
+                                                "fingerprint": data.fingerprint, "prefix_count": len(prefix),
+                                                "daily_history": read_closes(data.venue, data.market) if "prehistory" in body else [],
+                                                "bars": prefix + warmup + selected, "index": len(prefix) + len(warmup)})
                 actions = {"/api/backtests": app.backtest, "/api/paper": app.paper,
                            "/api/rehearsals": app.rehearse}
                 if match := re.fullmatch(r"/api/(backtests|runs)/(\d+)/delete", path):
