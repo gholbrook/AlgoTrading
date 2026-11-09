@@ -35,6 +35,8 @@ from statistics import pstdev
 from types import MappingProxyType
 from typing import Any
 
+from indicators.volume_profile import validate_profile
+
 MAX_CONTEXT_BARS = 10_000
 
 
@@ -589,10 +591,13 @@ def step_file(state: dict, bar: dict, trade: bool = True):
         try:
             plots = program.chart_indicators(chart_ctx)
             if not isinstance(plots, dict):
-                raise ValueError("expected a dictionary of line names and values")
+                raise ValueError("expected a dictionary of indicator names and line values or volume profiles")
             for name, value in plots.items():
                 if not isinstance(name, str) or not name.strip():
                     raise ValueError("each line needs a non-empty name")
+                if isinstance(value, dict):
+                    validate_profile(value)
+                    continue
                 if value is not None and (type(value) not in (float, int) or not math.isfinite(value)):
                     raise ValueError(f"{name} must be a finite price or None")
         except Exception as exc:

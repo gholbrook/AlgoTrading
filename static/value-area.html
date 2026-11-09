@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gridlab · Value-area stay experiment</title>
+<script>if(localStorage.getItem('gridline.theme')==='light')document.documentElement.dataset.theme='light';</script>
+<link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/manual.css">
+<script src="/static/value-area.js" defer></script></head>
+<body><div class="app-shell"><header class="topbar"><a class="brand" href="/">gridlab</a><a href="/range-explorer?area=adaptive3">Explore long ranges</a><a href="/workbench">← Research workbench</a></header>
+<main><section class="intro-row"><div><h1>Value-area <em>stays.</em></h1><p>Measure how long a frozen volume-profile value area contains future price.</p></div></section>
+<p id="status" role="status" aria-live="polite"></p>
+<div class="manual-layout"><aside><section class="manual-panel"><form id="experiment">
+<h2>Historical experiment</h2>
+<label>Quote currency<select id="quote"><option>BTC</option><option>ETH</option><option value="">All quotes</option></select></label>
+<label>Dataset<select id="dataset" required></select></label><p id="coverage" class="note"></p>
+<div class="two"><label>Start · UTC<input id="start" type="date"></label><label>End · UTC<input id="end" type="date"></label></div>
+<div class="two"><label>Profile candles<input id="candles" type="number" value="288" min="2" max="100000" required></label><label>Price bins<input id="bins" type="number" value="48" min="2" max="100" required></label></div>
+<label>Value-area volume · %<input id="value_area" type="number" value="70" min="0.01" max="100" step="any" required></label>
+<label>Volume allocation<select id="allocation"><option value="adaptive">Reduce wide 70% areas to 50%</option><option value="balanced">Equal volume on each side of POC</option><option value="adjacent">Expand through higher-volume bins</option></select></label>
+<label id="threshold-label">Reduce when 70% band width exceeds (%)<input id="width_threshold" type="number" value="3" min="0.001" step="any" required></label>
+<label>Allow consecutive outside candles<input id="grace" type="number" value="2" min="0" max="10000" required></label>
+<label>Maximum observation · candles<input id="horizon" type="number" value="288" min="1" max="100000" required></label>
+<label>Inside means<select id="inside"><option value="close">Close within value area</option><option value="wick">Entire high–low within value area</option></select></label>
+<label>Sample every N candles · 0 avoids overlapping observations<input id="stride" type="number" value="0" min="0" max="100000" required></label>
+<button class="primary" id="run" type="submit">Run experiment</button><p id="time-help" class="note"></p>
+</form></section></aside><div>
+<section class="manual-panel" id="results" hidden><h2>Observed stays</h2><p id="result-title" class="note"></p><div id="stats" class="manual-stats"></div>
+<p id="outcomes" class="note"></p><p class="note">Main averages use confirmed exits. Unfinished observations are censored and shown separately. Elapsed stay includes tolerated excursions that returned inside, and excludes the final outside streak. Strict duration stops at the first outside candle.</p>
+<div class="two"><button id="json">Download JSON</button><button id="csv">Download instances CSV</button></div></section>
+<section class="manual-panel" id="inspection" hidden><h2>Inspect an instance</h2>
+<label>Instance<select id="episode"></select></label><p id="episode-detail" class="note"></p>
+<label><input id="full-formation" type="checkbox" style="display:inline;width:auto;margin-right:8px">Show full profile formation history</label>
+<svg id="episode-chart" viewBox="0 0 900 330" style="width:100%;height:330px" role="img" aria-label="Historical closes with frozen value-area boundaries"></svg>
+<p class="note">Gray shows profile formation. The shaded area marks the frozen boundaries during observation. Green dots meet the containment rule. Orange dots are outside. The line shows candle closes. Hover a dot for OHLC.</p>
+</section>
+<section class="manual-panel"><details><summary>How the test works</summary>
+<p>At an eligible candle close, build a profile from the configured number of trailing candles. Require the current candle to satisfy the containment rule. Freeze VAL, VAH and POC, then observe subsequent candles. A confirmed exit requires more consecutive outside candles than the allowance.</p>
+<p>Each profile distributes candle volume uniformly across its high–low prices. Equal allocation measures half the requested volume on each side of the POC and skips profiles with too little volume on either side. Formation windows with gaps or zero volume are skipped.</p>
+<p>Earlier candles can warm the profile before the start date. Future observations stop at the end date. By default, the next observation starts after the prior one finishes, although formation windows can overlap. A positive sampling interval allows overlapping observations.</p>
+<p>Downloads include every instance, configuration, dataset fingerprint, monthly summaries, skipped candidates and termination reasons. A projection of future strategy profit requires a separate execution test.</p>
+</details></section></div></div></main></div></body></html>

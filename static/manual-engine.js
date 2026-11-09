@@ -73,9 +73,15 @@
     // Snapshot prevents targets created inside this candle filling on unknown intrabar paths.
     const eligible = [...s.orders];
     for (const o of eligible) {
-      if (o.price !== null && (o.side === 'buy' ? bar.low > o.price : bar.high < o.price)) continue;
+      // A sell limit executable at the open precedes intrabar moves.
+      // If both exits are touched later, resolve the ambiguous path stop-first.
+      const stopped = o.side === 'sell' && o.stopPrice > 0 &&
+        (o.stopOnly || bar.open < o.price) && bar.low <= o.stopPrice;
+      if (o.stopOnly && !stopped) continue;
+      if (!stopped && o.price !== null && (o.side === 'buy' ? bar.low > o.price : bar.high < o.price)) continue;
       let price;
-      if (o.price === null) price = bar.open * (1 + (o.side === 'buy' ? s.slip : -s.slip));
+      if (stopped) price = Math.min(bar.open, o.stopPrice) * (1 - s.slip);
+      else if (o.price === null) price = bar.open * (1 + (o.side === 'buy' ? s.slip : -s.slip));
       else price = o.side === 'buy' ? Math.min(bar.open, o.price) : Math.max(bar.open, o.price);
       const qty = o.side === 'buy' ? o.budget / (price * (1 + s.fee)) : o.qty;
       const fee = qty * price * s.fee;
@@ -83,7 +89,7 @@
       else { s.cash += qty * price - fee; s.held -= qty; }
       s.fees += fee;
       s.orders = s.orders.filter(order => order.id !== o.id);
-      s.fills.push({id: o.id, side: o.side, qty, price, fee, ts: bar.ts, parent: o.parent ?? null});
+      s.fills.push({id: o.id, side: o.side, qty, price, fee, ts: bar.ts, parent: o.parent ?? null, ...(stopped ? {reason:o.stopReason || "stop"} : {})});
       if (o.side === 'buy') for (const t of o.targets) s.orders.push({id: s.nextId++, side: 'sell',
         qty: qty * t.qtyPct / 100, price: price * (1 + t.gainPct / 100), targets: [], parent: o.id});
     }

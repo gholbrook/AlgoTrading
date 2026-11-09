@@ -193,19 +193,32 @@
     });
   }
 
+  let dateWindowDataset = null;
   function updateDatasetMeta() {
     const d = selectedDataset();
-    if (!d) return;
+    if (!d) {
+      dateWindowDataset = null;
+      for (const id of ['date-start', 'date-end']) {
+        const input = $(id);
+        input.value = input.min = input.max = '';
+      }
+      return;
+    }
     $('research-start-data').textContent = `${d.market} · ${d.timeframe} · ${num(d.bars, 0)} candles available · ${fmtDate(d.start)} — ${fmtDate(d.end)}`;
     const venue = d.venue ? `${d.venue} snapshot` : 'local CSV';
     $('dataset-meta').textContent =
       `${d.bars} candles · ${fmtDate(d.start)} — ${fmtDate(d.end)} · ${venue}`;
     for (const id of ['date-start', 'date-end']) {
       const input = $(id);
+      const oldBound = id === 'date-start' ? input.min : input.max;
+      const useBound = dateWindowDataset !== d.id || !input.value || input.value === oldBound;
       input.min = d.start.slice(0, 10);
       input.max = d.end.slice(0, 10);
-      if (input.value && (input.value < input.min || input.value > input.max)) input.value = '';
+      if (useBound || input.value < input.min || input.value > input.max) {
+        input.value = id === 'date-start' ? input.min : input.max;
+      }
     }
+    dateWindowDataset = d.id;
     const live = state.mode === 'paper' && $('feed-choice').value === 'live';
     const currency = quoteCurrencyFor(live ? $('market').value : d.market);
     if (!selectedStrategy() && currency !== $('capital-unit').textContent) {
@@ -558,6 +571,7 @@
       loadUsdVolume(state.run);
       state.priorVolume = data.volume_before_window || [];
       if (changed || state.chartRunId !== String(state.run.id)) {
+        state.chart = state.run.mode === 'backtest' ? 'detailed' : 'price';
         state.trace = null;
         state.chartRunId = String(state.run.id);
         state.chartCursor = state.points.length - 1;
@@ -785,6 +799,16 @@
 
   function renderChart() {
     const svg = $('main-chart');
+    const frame = $('backtest-chart');
+    const detailed = state.run?.mode === 'backtest' && state.chart === 'detailed';
+    frame.hidden = !detailed;
+    $('expand-backtest').hidden = !detailed;
+    svg.closest('.chart-wrap').hidden = detailed;
+    $('hover-readout').hidden = detailed;
+    for (const button of document.querySelectorAll('.chart-toggle-button')) {
+      button.classList.toggle('active', button.dataset.chart === state.chart);
+      if (button.dataset.chart === 'detailed') button.hidden = state.run?.mode !== 'backtest';
+    }
     const width = Math.max(260, svg.clientWidth);
     const height = Math.max(160, svg.clientHeight);
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
@@ -805,10 +829,34 @@
       ? `${visibleStart + 1}–${visibleEnd + 1} / ${allPoints.length} candles`
       : '—';
     $('chart-view-status').textContent = points.length ? `${points.length} visible · cursor ${cursor + 1}/${allPoints.length}` : 'No candles';
+    for (const [id, direction] of [['previous-trade', -1], ['next-trade', 1]]) {
+      const button = $(id);
+      button.hidden = state.run?.mode !== 'backtest';
+      let target = cursor + direction;
+      while (!button.hidden && target >= 0 && target < allPoints.length &&
+             !allPoints[target].events?.some(fill => fill.kind === 'entry' || fill.kind === 'exit')) {
+        target += direction;
+      }
+      button.disabled = button.hidden || target < 0 || target >= allPoints.length;
+      button.onclick = button.disabled ? null : () => seekInspector(target);
+    }
     $('chart-pan-earlier').disabled = cursor <= 0;
     $('chart-pan-later').disabled = cursor >= allPoints.length - 1;
     $('chart-zoom-in').disabled = state.chartSpan <= 20;
     $('chart-zoom-out').disabled = state.chartSpan >= Math.max(20, allPoints.length);
+    if (detailed) {
+      $('macd-pane').hidden = true;
+      if (!frame.hasAttribute('src')) frame.src = '/range-explorer?view=backtest';
+      frame.contentWindow?.updateBacktest?.(allPoints, cursor, state.chartSpan,
+        document.documentElement.dataset.theme, fillLabel, (index, span) => {
+          state.chartSpan = Math.max(20, Math.min(allPoints.length, Math.round(span)));
+          seekInspector(Math.round(index));
+        }, state.trace);
+      if (state.trace && state.trace.start >= visibleStart && state.trace.end <= cursor) {
+        showTraceLabel(state.trace);
+      }
+      return;
+    }
     renderMacd(visibleStart, cursor, width);
     const candles = state.chart === 'candles';
     $('price-series-label').textContent = candles ? 'OHLC' : 'Close';
@@ -848,6 +896,8 @@
       svg.append(t);
       return;
     }
+    const profiles = visibleOverlays.map(name => ({name, profile: points.at(-1).plots?.[name]}))
+      .filter(({profile}) => profile?.type === 'volume_profile');
     const key = state.chart === 'equity' ? 'equity' : 'close';
     const drawIndices = chartSampleIndices(points, key);
     const drawPoints = drawIndices.map((i) => points[i]);
@@ -864,6 +914,9 @@
       return;
     }
     const rangeVals = [...vals];
+    if (state.chart !== 'equity') {
+      for (const {profile} of profiles) rangeVals.push(profile.low, profile.high);
+    }
     if (state.chart !== 'equity') {
       for (const point of points) {
         for (const name of visibleOverlays) {
@@ -929,6 +982,37 @@
       svg.append(text);
     }
     if (state.chart !== 'equity') {
+      for (const {name, profile} of profiles) {
+        const group = svgEl('g', {class: 'volume-profile', 'aria-label': name, 'pointer-events': 'none'});
+        const peak = Math.max(...profile.volumes);
+        const binHeight = (profile.high - profile.low) / profile.volumes.length;
+        const maxWidth = (right - left) * 0.24;
+        profile.volumes.forEach((volume, index) => {
+          const low = profile.low + index * binHeight;
+          const high = low + binHeight;
+          const length = peak > 0 ? maxWidth * volume / peak : 0;
+          const inValueArea = profile.value_low !== null && low >= profile.value_low - binHeight * 1e-8
+            && high <= profile.value_high + binHeight * 1e-8;
+          group.append(svgEl('rect', {x: right - length, y: y(high), width: length,
+            height: Math.max(0.5, y(low) - y(high) - 0.5), fill: plotColor(name),
+            opacity: inValueArea ? 0.55 : 0.25}));
+        });
+        for (const [field, label] of [['poc', 'POC'], ['value_low', 'VAL'], ['value_high', 'VAH']]) {
+          const price = profile[field];
+          if (price === null) continue;
+          group.append(svgEl('line', {x1: right - maxWidth, x2: right, y1: y(price), y2: y(price),
+            stroke: plotColor(name), 'stroke-width': field === 'poc' ? 2 : 1,
+            'stroke-dasharray': field === 'poc' ? '' : '3 3'}));
+          const text = svgEl('text', {x: right - maxWidth - 4, y: y(price) - 3,
+            'text-anchor': 'end', class: 'chart-tick'});
+          text.textContent = `${label} ${num(price, price < 1 ? 8 : 2)}`;
+          group.append(text);
+        }
+        const caption = svgEl('text', {x: right, y: top + 12, 'text-anchor': 'end', class: 'chart-tick'});
+        caption.textContent = `${name} · ${profile.days}D${profile.complete ? '' : ' · partial history'} · OHLCV estimate`;
+        group.append(caption);
+        svg.append(group);
+      }
       (showBands ? ['upper', 'lower'] : []).forEach((field) => {
         let d = '',
           drawing = false;
@@ -981,8 +1065,7 @@
         for (const [cx, cy] of [[x1, y1], [x2, y2]]) {
           svg.append(svgEl('circle', {cx, cy, r: 9, class: 'trade-endpoint'}));
         }
-        $('trade-trace').hidden = false;
-        $('trade-trace-label').textContent = `Open ${trace.entry.direction} · ${fmtDate(trace.entry.ts, true)} at ${money(trace.entry.price)} → ${fillLabel(trace.exit)} · ${fmtDate(trace.exit.ts, true)} at ${money(trace.exit.price)}`;
+        showTraceLabel(trace);
       }
       markers.forEach(({ e, i }) => {
         const type = fillType(e);
@@ -1055,6 +1138,10 @@
       f.ts === exit.entry_ts && f.direction === exit.direction &&
       (exit.lot_id != null || exit.position_id != null || f.qty >= exit.qty));
   }
+  function showTraceLabel(trace) {
+    $('trade-trace').hidden = false;
+    $('trade-trace-label').textContent = `Open ${trace.entry.direction} · ${fmtDate(trace.entry.ts, true)} at ${money(trace.entry.price)} → ${fillLabel(trace.exit)} · ${fmtDate(trace.exit.ts, true)} at ${money(trace.exit.price)}`;
+  }
   function traceButton(exit, start, end, entry) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -1068,6 +1155,16 @@
     });
     return button;
   }
+  $('expand-backtest').onclick = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await $('report').requestFullscreen();
+    } catch (error) { showToast(error.message, true); }
+  };
+  document.addEventListener('fullscreenchange', () => {
+    $('expand-backtest').textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
+  });
+  $('backtest-chart').addEventListener('load', renderChart);
   $('clear-trace').addEventListener('click', () => { state.trace = null; renderChart(); });
   function resetHover() {
     state.hoverPinned = false;
