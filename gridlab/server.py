@@ -21,7 +21,7 @@ from gridlab.usd_volume import quote_usd_rates, usd_volume
 from research.value_area_stays import run_experiment
 from gridlab import engine
 from tools.bulk_history import collect_month
-from gridlab.datasets import Dataset, LazyDataset, CombinedDataset, SAMPLE, combine_datasets, load_bulk_datasets, load_datasets, load_history_datasets
+from gridlab.datasets import Dataset, LazyDataset, CombinedDataset, SAMPLE, combine_datasets, load_datasets, load_history_datasets
 from gridlab.historical import coverage_start, download_snapshot
 from gridlab.market import fetch_closed
 from gridlab.storage import Store, StoreError
